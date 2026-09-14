@@ -8,6 +8,7 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest": "pnpm --filter @workspace/db push",
     "test": "esbuild src/lib/analysis-engine.test.ts --bundle --platform=node --format=cjs --outfile=/tmp/analysis-engine.test.cjs && NODE_ENV=production node --test /tmp/analysis-engine.test.cjs"
   },
   "dependencies": {
