@@ -8,7 +8,7 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "esbuild src/lib/analysis-engine.test.ts --bundle --platform=node --format=esm --outfile=/tmp/analysis-engine.test.mjs && node --test /tmp/analysis-engine.test.mjs"
+    "test": "esbuild src/lib/analysis-engine.test.ts --bundle --platform=node --format=cjs --outfile=/tmp/analysis-engine.test.cjs && NODE_ENV=production node --test /tmp/analysis-engine.test.cjs"
   },
   "dependencies": {
     "@workspace/api-zod": "workspace:*",

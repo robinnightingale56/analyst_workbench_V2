@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import type { AddressInfo } from "node:net";
 import test from "node:test";
+import app from "../app";
 import { buildCountAnswer, deduplicateIncidents, incidentCitationError, type Incident } from "./analysis-engine";
+import { createSession, getSession } from "./analysis-store";
 import { parseBingNewsRss } from "./source-adapters";
 
 function source(id: string, content: string, publishedAt = "2026-09-14T12:00:00Z") {
@@ -196,6 +199,16 @@ test("a supporting headline with non-supporting content is not counted", () => {
   assert.equal(answer?.incidents.length, 0);
 });
 
+test("extracts a supported incident from report content when the title is unrelated", () => {
+  const contentOnly = {
+    ...source("a", "Country Alpha and Country Beta clashed at North Ridge on 12 September 2026."),
+    title: "Daily regional briefing",
+  };
+  const answer = buildCountAnswer(question, [contentOnly]);
+  assert.equal(answer?.provisionalCount, 1);
+  assert.deepEqual(answer?.incidents[0]?.sourceFileIds, ["a"]);
+});
+
 const reviewedIncident: Incident = {
   id: "reviewed",
   date: "2026-09-12T00:00:00.000Z",
@@ -301,6 +314,24 @@ test("keeps cross-source incidents with different stated event dates distinct", 
   assert.equal(answer?.provisionalCount, 2);
 });
 
+test("keeps same-day incidents at different known locations distinct", () => {
+  const answer = buildCountAnswer(question, [
+    source("a", "Country Alpha and Country Beta clashed at North Ridge on 12 September 2026."),
+    source("b", "Country Alpha and Country Beta clashed at South Pass on 12 September 2026."),
+  ]);
+  assert.equal(answer?.provisionalCount, 2);
+});
+
+test("consolidates matching reports when neither establishes a location", () => {
+  const answer = buildCountAnswer(question, [
+    source("a", "Country Alpha and Country Beta clashed on 12 September 2026 after patrols crossed paths."),
+    source("b", "Country Alpha and Country Beta clashed on 12 September 2026 after patrols crossed paths."),
+  ]);
+  assert.equal(answer?.provisionalCount, 1);
+  assert.equal(answer?.incidents[0]?.location, "Location not established");
+  assert.deepEqual(answer?.incidents[0]?.sourceFileIds.sort(), ["a", "b"]);
+});
+
 test("consolidates duplicate reports and preserves both citations", () => {
   const answer = buildCountAnswer(question, [
     source("a", "Country Alpha and Country Beta clashed at North Ridge on 12 September 2026."),
@@ -330,4 +361,171 @@ test("review updates cannot inflate the count with duplicate incidents", () => {
   const normalized = deduplicateIncidents([reviewedIncident, duplicate]);
   assert.equal(normalized.length, 1);
   assert.deepEqual(normalized[0]?.sourceFileIds, ["a"]);
+});
+
+async function withApi(
+  run: (baseUrl: string) => Promise<void>,
+) {
+  const server = app.listen(0);
+  await new Promise<void>((resolve, reject) => {
+    server.once("listening", resolve);
+    server.once("error", reject);
+  });
+  const { port } = server.address() as AddressInfo;
+  try {
+    await run(`http://127.0.0.1:${port}/api`);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+  }
+}
+
+async function requestJson(
+  baseUrl: string,
+  path: string,
+  init?: RequestInit,
+) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    ...init,
+    headers: {
+      "content-type": "application/json",
+      ...init?.headers,
+    },
+  });
+  const body = await response.json() as Record<string, any>;
+  return { response, body };
+}
+
+function createCountSession() {
+  const session = createSession({ prompt: question });
+  session.sourceFiles = [
+    {
+      ...source("a", "Country Alpha and Country Beta clashed at North Ridge on 12 September 2026."),
+      retrievedAt: "2026-09-14T12:00:00Z",
+      collectionMethod: "TEST_FIXTURE",
+    },
+    {
+      ...source("b", "Country Alpha and Country Beta clashed at South Pass on 13 September 2026."),
+      retrievedAt: "2026-09-14T12:00:00Z",
+      collectionMethod: "TEST_FIXTURE",
+    },
+  ];
+  return session;
+}
+
+test("API review contract supports exclude, include, add, save, and finalize", async () => {
+  await withApi(async (baseUrl) => {
+    const session = createCountSession();
+    const assessed = await requestJson(
+      baseUrl,
+      `/analysis-sessions/${session.id}/assessment`,
+      {
+        method: "POST",
+        body: JSON.stringify({ selectedSourceFileIds: ["a", "b"] }),
+      },
+    );
+    assert.equal(assessed.response.status, 200);
+    assert.equal(assessed.body.assessment.countAnswer.provisionalCount, 2);
+
+    const [first, second] = assessed.body.assessment.countAnswer.incidents;
+    const excluded = await requestJson(
+      baseUrl,
+      `/analysis-sessions/${session.id}/assessment`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          incidents: [{ ...first, status: "EXCLUDED" }],
+          finalized: false,
+        }),
+      },
+    );
+    assert.equal(excluded.response.status, 200);
+    assert.equal(excluded.body.assessment.countAnswer.provisionalCount, 0);
+    assert.equal(excluded.body.assessment.countAnswer.answerStatus, "INSUFFICIENT_EVIDENCE");
+
+    const includedAndAdded = await requestJson(
+      baseUrl,
+      `/analysis-sessions/${session.id}/assessment`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          incidents: [
+            { ...first, status: "INCLUDED" },
+            { ...second, id: "analyst-added", status: "INCLUDED" },
+          ],
+          finalized: false,
+        }),
+      },
+    );
+    assert.equal(includedAndAdded.response.status, 200);
+    assert.equal(includedAndAdded.body.assessment.countAnswer.provisionalCount, 2);
+    assert.equal(includedAndAdded.body.assessment.countAnswer.finalized, false);
+
+    const saved = await requestJson(baseUrl, `/analysis-sessions/${session.id}`);
+    assert.equal(saved.response.status, 200);
+    assert.deepEqual(
+      saved.body.assessment.countAnswer.incidents.map((incident: Incident) => incident.id),
+      [first.id, "analyst-added"],
+    );
+
+    const finalized = await requestJson(
+      baseUrl,
+      `/analysis-sessions/${session.id}/assessment`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          incidents: saved.body.assessment.countAnswer.incidents,
+          finalized: true,
+        }),
+      },
+    );
+    assert.equal(finalized.response.status, 200);
+    assert.equal(finalized.body.assessment.countAnswer.finalized, true);
+    assert.equal(finalized.body.assessment.provisional, false);
+    assert.equal(getSession(session.id)?.assessment?.countAnswer?.finalized, true);
+  });
+});
+
+test("API review contract rejects dropped citations and finalized factual zero", async () => {
+  await withApi(async (baseUrl) => {
+    const session = createCountSession();
+    const assessed = await requestJson(
+      baseUrl,
+      `/analysis-sessions/${session.id}/assessment`,
+      {
+        method: "POST",
+        body: JSON.stringify({ selectedSourceFileIds: ["a"] }),
+      },
+    );
+    const incident = assessed.body.assessment.countAnswer.incidents[0];
+
+    const missingCitation = await requestJson(
+      baseUrl,
+      `/analysis-sessions/${session.id}/assessment`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          incidents: [{ ...incident, sourceFileIds: [] }],
+          finalized: false,
+        }),
+      },
+    );
+    assert.equal(missingCitation.response.status, 400);
+    assert.match(missingCitation.body.error, /requires a citation/);
+
+    const factualZero = await requestJson(
+      baseUrl,
+      `/analysis-sessions/${session.id}/assessment`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          incidents: [{ ...incident, status: "EXCLUDED" }],
+          finalized: true,
+        }),
+      },
+    );
+    assert.equal(factualZero.response.status, 400);
+    assert.match(factualZero.body.error, /factual zero/);
+  });
 });
