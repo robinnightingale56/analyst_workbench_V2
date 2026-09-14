@@ -69,6 +69,8 @@ export interface IncidentReviewInput {
 }
 
 export interface IncidentReviewUpdate {
+  /** @minimum 1 */
+  expectedVersion: number;
   finalized: boolean;
   incidents: IncidentReviewInput[];
 }
@@ -361,6 +363,9 @@ export interface AnalysisSession {
   sourceFiles: SourceFile[];
   sourceNotices: string[];
   assessment: Assessment | null;
+  /** @minimum 1 */
+  version: number;
+  updatedAt: string;
 }
 
 export type SourceConnectorStatus = typeof SourceConnectorStatus[keyof typeof SourceConnectorStatus];

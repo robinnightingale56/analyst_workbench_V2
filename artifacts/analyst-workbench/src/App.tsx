@@ -328,7 +328,7 @@ function CountAnswerReview({ session, onUpdated }: { session: AnalysisSession; o
   const hasUncitedIncludedIncident = incidents.some((incident) => incident.status === 'INCLUDED' && incident.sourceFileIds.length === 0);
   const hasSupportedAnswer = includedCount > 0;
   const save = (finalized: boolean) => updateReview.mutate(
-    { sessionId: session.id, data: { incidents, finalized } },
+    { sessionId: session.id, data: { incidents, finalized, expectedVersion: session.version } },
     { onSuccess: onUpdated },
   );
   const addIncident = () => {

@@ -25,6 +25,7 @@ import {
   listSessions,
   runSessionResearch,
   updateIncidentReview,
+  AnalysisVersionConflictError,
 } from "../lib/analysis-store";
 import {
   evaluationVectors,
@@ -37,27 +38,27 @@ import { isKnownSourceConnector } from "../lib/source-adapters";
 
 const router: IRouter = Router();
 
-router.get("/analysis-sessions", (_req, res) => {
-  res.json(ListAnalysisSessionsResponse.parse(listSessions()));
+router.get("/analysis-sessions", async (_req, res) => {
+  res.json(ListAnalysisSessionsResponse.parse(await listSessions()));
 });
 
-router.post("/analysis-sessions", (req, res) => {
+router.post("/analysis-sessions", async (req, res) => {
   const body = CreateAnalysisSessionBody.safeParse(req.body);
   if (!body.success) {
     req.log.warn({ validation: body.error.message }, "Invalid analysis session");
     res.status(400).json({ error: body.error.message });
     return;
   }
-  res.status(201).json(CreateAnalysisSessionResponse.parse(createSession(body.data)));
+  res.status(201).json(CreateAnalysisSessionResponse.parse(await createSession(body.data)));
 });
 
-router.get("/analysis-sessions/:sessionId", (req, res) => {
+router.get("/analysis-sessions/:sessionId", async (req, res) => {
   const params = GetAnalysisSessionParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const session = getSession(params.data.sessionId);
+  const session = await getSession(params.data.sessionId);
   if (!session) {
     res.status(404).json({ error: "Analysis session not found" });
     return;
@@ -80,7 +81,7 @@ router.post("/analysis-sessions/:sessionId/research", async (req, res): Promise<
     res.status(400).json({ error: "Select at least one source connector" });
     return;
   }
-  const existing = getSession(params.data.sessionId);
+  const existing = await getSession(params.data.sessionId);
   if (!existing) {
     res.status(404).json({ error: "Analysis session not found" });
     return;
@@ -114,7 +115,7 @@ router.post("/analysis-sessions/:sessionId/research", async (req, res): Promise<
   res.json(RunResearchResponse.parse(session));
 });
 
-router.post("/analysis-sessions/:sessionId/assessment", (req, res) => {
+router.post("/analysis-sessions/:sessionId/assessment", async (req, res) => {
   const params = CreateAssessmentParams.safeParse(req.params);
   const body = CreateAssessmentBody.safeParse(req.body);
   if (!params.success) {
@@ -129,7 +130,7 @@ router.post("/analysis-sessions/:sessionId/assessment", (req, res) => {
     res.status(400).json({ error: "Select at least one source file" });
     return;
   }
-  const existing = getSession(params.data.sessionId);
+  const existing = await getSession(params.data.sessionId);
   if (!existing) {
     res.status(404).json({ error: "Analysis session not found" });
     return;
@@ -141,7 +142,7 @@ router.post("/analysis-sessions/:sessionId/assessment", (req, res) => {
     });
     return;
   }
-  const session = assessSession(
+  const session = await assessSession(
     params.data.sessionId,
     body.data.selectedSourceFileIds,
   );
@@ -152,7 +153,7 @@ router.post("/analysis-sessions/:sessionId/assessment", (req, res) => {
   res.json(CreateAssessmentResponse.parse(session));
 });
 
-router.patch("/analysis-sessions/:sessionId/assessment", (req, res) => {
+router.patch("/analysis-sessions/:sessionId/assessment", async (req, res) => {
   const params = UpdateIncidentReviewParams.safeParse(req.params);
   const body = UpdateIncidentReviewBody.safeParse(req.body);
   if (!params.success) {
@@ -163,7 +164,7 @@ router.patch("/analysis-sessions/:sessionId/assessment", (req, res) => {
     res.status(400).json({ error: body.error.message });
     return;
   }
-  const existing = getSession(params.data.sessionId);
+  const existing = await getSession(params.data.sessionId);
   if (!existing?.assessment?.countAnswer) {
     res.status(404).json({ error: "Count assessment not found" });
     return;
@@ -198,12 +199,23 @@ router.patch("/analysis-sessions/:sessionId/assessment", (req, res) => {
     res.status(400).json({ error: "Insufficient evidence cannot be finalized as a factual zero" });
     return;
   }
-  const session = updateIncidentReview(
-    params.data.sessionId,
-    normalizedIncidents,
-    body.data.finalized,
-  );
-  res.json(UpdateIncidentReviewResponse.parse(session));
+  try {
+    const session = await updateIncidentReview(
+      params.data.sessionId,
+      normalizedIncidents,
+      body.data.finalized,
+      body.data.expectedVersion,
+    );
+    res.json(UpdateIncidentReviewResponse.parse(session));
+  } catch (error) {
+    if (error instanceof AnalysisVersionConflictError) {
+      res.status(409).json({
+        error: "This review changed after you opened it. Reload before saving.",
+      });
+      return;
+    }
+    throw error;
+  }
 });
 
 router.get("/source-connectors", (_req, res) => {

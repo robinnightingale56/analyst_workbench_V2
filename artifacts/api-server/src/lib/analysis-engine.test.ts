@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import test from "node:test";
 import app from "../app";
 import { buildCountAnswer, deduplicateIncidents, incidentCitationError, type Incident } from "./analysis-engine";
-import { createSession, getSession } from "./analysis-store";
+import { createSession, getSession, setSessionSources } from "./analysis-store";
 import { parseBingNewsRss } from "./source-adapters";
 
 function source(id: string, content: string, publishedAt = "2026-09-14T12:00:00Z") {
@@ -397,9 +397,9 @@ async function requestJson(
   return { response, body };
 }
 
-function createCountSession() {
-  const session = createSession({ prompt: question });
-  session.sourceFiles = [
+async function createCountSession() {
+  const session = await createSession({ prompt: question });
+  return (await setSessionSources(session.id, [
     {
       ...source("a", "Country Alpha and Country Beta clashed at North Ridge on 12 September 2026."),
       retrievedAt: "2026-09-14T12:00:00Z",
@@ -410,13 +410,12 @@ function createCountSession() {
       retrievedAt: "2026-09-14T12:00:00Z",
       collectionMethod: "TEST_FIXTURE",
     },
-  ];
-  return session;
+  ]))!;
 }
 
 test("API review contract supports exclude, include, add, save, and finalize", async () => {
   await withApi(async (baseUrl) => {
-    const session = createCountSession();
+    const session = await createCountSession();
     const assessed = await requestJson(
       baseUrl,
       `/analysis-sessions/${session.id}/assessment`,
@@ -437,6 +436,7 @@ test("API review contract supports exclude, include, add, save, and finalize", a
         body: JSON.stringify({
           incidents: [{ ...first, status: "EXCLUDED" }],
           finalized: false,
+          expectedVersion: assessed.body.version,
         }),
       },
     );
@@ -455,6 +455,7 @@ test("API review contract supports exclude, include, add, save, and finalize", a
             { ...second, id: "analyst-added", status: "INCLUDED" },
           ],
           finalized: false,
+          expectedVersion: excluded.body.version,
         }),
       },
     );
@@ -477,19 +478,20 @@ test("API review contract supports exclude, include, add, save, and finalize", a
         body: JSON.stringify({
           incidents: saved.body.assessment.countAnswer.incidents,
           finalized: true,
+          expectedVersion: saved.body.version,
         }),
       },
     );
     assert.equal(finalized.response.status, 200);
     assert.equal(finalized.body.assessment.countAnswer.finalized, true);
     assert.equal(finalized.body.assessment.provisional, false);
-    assert.equal(getSession(session.id)?.assessment?.countAnswer?.finalized, true);
+    assert.equal((await getSession(session.id))?.assessment?.countAnswer?.finalized, true);
   });
 });
 
 test("API review contract rejects dropped citations and finalized factual zero", async () => {
   await withApi(async (baseUrl) => {
-    const session = createCountSession();
+    const session = await createCountSession();
     const assessed = await requestJson(
       baseUrl,
       `/analysis-sessions/${session.id}/assessment`,
@@ -508,6 +510,7 @@ test("API review contract rejects dropped citations and finalized factual zero",
         body: JSON.stringify({
           incidents: [{ ...incident, sourceFileIds: [] }],
           finalized: false,
+          expectedVersion: assessed.body.version,
         }),
       },
     );
@@ -522,10 +525,58 @@ test("API review contract rejects dropped citations and finalized factual zero",
         body: JSON.stringify({
           incidents: [{ ...incident, status: "EXCLUDED" }],
           finalized: true,
+          expectedVersion: assessed.body.version,
         }),
       },
     );
     assert.equal(factualZero.response.status, 400);
     assert.match(factualZero.body.error, /factual zero/);
+  });
+});
+
+test("API review contract rejects a stale concurrent update", async () => {
+  await withApi(async (baseUrl) => {
+    const session = await createCountSession();
+    const assessed = await requestJson(
+      baseUrl,
+      `/analysis-sessions/${session.id}/assessment`,
+      {
+        method: "POST",
+        body: JSON.stringify({ selectedSourceFileIds: ["a"] }),
+      },
+    );
+    const incident = assessed.body.assessment.countAnswer.incidents[0];
+    const firstUpdate = await requestJson(
+      baseUrl,
+      `/analysis-sessions/${session.id}/assessment`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          incidents: [incident],
+          finalized: false,
+          expectedVersion: assessed.body.version,
+        }),
+      },
+    );
+    assert.equal(firstUpdate.response.status, 200);
+
+    const staleUpdate = await requestJson(
+      baseUrl,
+      `/analysis-sessions/${session.id}/assessment`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          incidents: [{ ...incident, status: "EXCLUDED" }],
+          finalized: false,
+          expectedVersion: assessed.body.version,
+        }),
+      },
+    );
+    assert.equal(staleUpdate.response.status, 409);
+    assert.match(staleUpdate.body.error, /Reload before saving/);
+
+    const persisted = await getSession(session.id);
+    assert.equal(persisted?.version, firstUpdate.body.version);
+    assert.equal(persisted?.assessment?.countAnswer?.incidents[0]?.status, "INCLUDED");
   });
 });

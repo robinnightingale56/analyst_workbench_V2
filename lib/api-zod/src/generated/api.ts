@@ -46,6 +46,7 @@ export const listAnalysisSessionsResponseAssessmentOneCountAnswerOneProvisionalC
 
 
 
+
 export const ListAnalysisSessionsResponseItem = zod.object({
   "id": zod.string(),
   "prompt": zod.string(),
@@ -134,7 +135,9 @@ export const ListAnalysisSessionsResponseItem = zod.object({
   "status": zod.enum(['INCLUDED', 'EXCLUDED'])
 }))
 }),zod.null()])
-}),zod.null()])
+}),zod.null()]),
+  "version": zod.number().int().min(1),
+  "updatedAt": zod.string()
 })
 export const ListAnalysisSessionsResponse = zod.array(ListAnalysisSessionsResponseItem)
 
@@ -175,6 +178,7 @@ export const createAnalysisSessionResponseAssessmentOneHistoricalRatingsItemScor
 export const createAnalysisSessionResponseAssessmentOneCountAnswerOneRequestedPartiesMin = 2;
 
 export const createAnalysisSessionResponseAssessmentOneCountAnswerOneProvisionalCountMin = 0;
+
 
 
 
@@ -267,7 +271,9 @@ export const CreateAnalysisSessionResponse = zod.object({
   "status": zod.enum(['INCLUDED', 'EXCLUDED'])
 }))
 }),zod.null()])
-}),zod.null()])
+}),zod.null()]),
+  "version": zod.number().int().min(1),
+  "updatedAt": zod.string()
 })
 
 
@@ -300,6 +306,7 @@ export const getAnalysisSessionResponseAssessmentOneHistoricalRatingsItemScoreMa
 export const getAnalysisSessionResponseAssessmentOneCountAnswerOneRequestedPartiesMin = 2;
 
 export const getAnalysisSessionResponseAssessmentOneCountAnswerOneProvisionalCountMin = 0;
+
 
 
 
@@ -392,7 +399,9 @@ export const GetAnalysisSessionResponse = zod.object({
   "status": zod.enum(['INCLUDED', 'EXCLUDED'])
 }))
 }),zod.null()])
-}),zod.null()])
+}),zod.null()]),
+  "version": zod.number().int().min(1),
+  "updatedAt": zod.string()
 })
 
 
@@ -434,6 +443,7 @@ export const runResearchResponseAssessmentOneHistoricalRatingsItemScoreMax = 100
 export const runResearchResponseAssessmentOneCountAnswerOneRequestedPartiesMin = 2;
 
 export const runResearchResponseAssessmentOneCountAnswerOneProvisionalCountMin = 0;
+
 
 
 
@@ -526,7 +536,9 @@ export const RunResearchResponse = zod.object({
   "status": zod.enum(['INCLUDED', 'EXCLUDED'])
 }))
 }),zod.null()])
-}),zod.null()])
+}),zod.null()]),
+  "version": zod.number().int().min(1),
+  "updatedAt": zod.string()
 })
 
 
@@ -563,6 +575,7 @@ export const createAssessmentResponseAssessmentOneHistoricalRatingsItemScoreMax 
 export const createAssessmentResponseAssessmentOneCountAnswerOneRequestedPartiesMin = 2;
 
 export const createAssessmentResponseAssessmentOneCountAnswerOneProvisionalCountMin = 0;
+
 
 
 
@@ -655,7 +668,9 @@ export const CreateAssessmentResponse = zod.object({
   "status": zod.enum(['INCLUDED', 'EXCLUDED'])
 }))
 }),zod.null()])
-}),zod.null()])
+}),zod.null()]),
+  "version": zod.number().int().min(1),
+  "updatedAt": zod.string()
 })
 
 
@@ -667,11 +682,13 @@ export const UpdateIncidentReviewParams = zod.object({
 })
 
 
+
 export const updateIncidentReviewBodyIncidentsItemPartiesMin = 2;
 
 
 
 export const UpdateIncidentReviewBody = zod.object({
+  "expectedVersion": zod.number().int().min(1),
   "finalized": zod.boolean(),
   "incidents": zod.array(zod.object({
   "id": zod.string(),
@@ -706,6 +723,7 @@ export const updateIncidentReviewResponseAssessmentOneHistoricalRatingsItemScore
 export const updateIncidentReviewResponseAssessmentOneCountAnswerOneRequestedPartiesMin = 2;
 
 export const updateIncidentReviewResponseAssessmentOneCountAnswerOneProvisionalCountMin = 0;
+
 
 
 
@@ -798,7 +816,9 @@ export const UpdateIncidentReviewResponse = zod.object({
   "status": zod.enum(['INCLUDED', 'EXCLUDED'])
 }))
 }),zod.null()])
-}),zod.null()])
+}),zod.null()]),
+  "version": zod.number().int().min(1),
+  "updatedAt": zod.string()
 })
 
 

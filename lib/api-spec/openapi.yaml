@@ -138,6 +138,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AnalysisSession"
+        "409":
+          description: Review was changed by another request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /source-connectors:
     get:
       operationId: listSourceConnectors
@@ -237,8 +243,11 @@ components:
             type: string
     IncidentReviewUpdate:
       type: object
-      required: [incidents, finalized]
+      required: [incidents, finalized, expectedVersion]
       properties:
+        expectedVersion:
+          type: integer
+          minimum: 1
         finalized:
           type: boolean
         incidents:
@@ -282,6 +291,8 @@ components:
         - sourceFiles
         - sourceNotices
         - assessment
+        - version
+        - updatedAt
       properties:
         id:
           type: string
@@ -309,6 +320,11 @@ components:
           oneOf:
             - $ref: "#/components/schemas/Assessment"
             - type: "null"
+        version:
+          type: integer
+          minimum: 1
+        updatedAt:
+          type: string
     SourceFile:
       type: object
       required:

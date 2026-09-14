@@ -600,7 +600,7 @@ return customFetch<AnalysisSession>(getUpdateIncidentReviewUrl(sessionId),
 
 export const getUpdateIncidentReviewMutationKey = () => ['updateIncidentReview'] as const;
 
-export const getUpdateIncidentReviewMutationOptions = <TError = ErrorType<unknown>,
+export const getUpdateIncidentReviewMutationOptions = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateIncidentReview>>, TError,UpdateIncidentReviewMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updateIncidentReview>>, TError,UpdateIncidentReviewMutationVariables, TContext> => {
 
@@ -629,13 +629,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type UpdateIncidentReviewMutationResult = NonNullable<Awaited<ReturnType<typeof updateIncidentReview>>>
     export type UpdateIncidentReviewMutationBody = BodyType<IncidentReviewUpdate>
-    export type UpdateIncidentReviewMutationError = ErrorType<unknown>
+    export type UpdateIncidentReviewMutationError = ErrorType<ErrorResponse>
     export type UpdateIncidentReviewMutationVariables = {sessionId: string;data: BodyType<IncidentReviewUpdate>}
 
     /**
  * @summary Review candidate incidents and finalize the provisional count
  */
-export const useUpdateIncidentReview = <TError = ErrorType<unknown>,
+export const useUpdateIncidentReview = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateIncidentReview>>, TError,UpdateIncidentReviewMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof updateIncidentReview>>,

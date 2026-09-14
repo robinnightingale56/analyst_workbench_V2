@@ -8,6 +8,8 @@
 import type { IncidentReviewInput } from './incidentReviewInput';
 
 export interface IncidentReviewUpdate {
+  /** @minimum 1 */
+  expectedVersion: number;
   finalized: boolean;
   incidents: IncidentReviewInput[];
 }
