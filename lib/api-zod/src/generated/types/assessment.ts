@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AnalyticStandard } from './analyticStandard';
+import type { EvaluationVectorResult } from './evaluationVectorResult';
+import type { HistoricalRating } from './historicalRating';
+import type { TrendAnalysis } from './trendAnalysis';
 
 export interface Assessment {
   id: string;
@@ -17,4 +20,7 @@ export interface Assessment {
   overallScore: number;
   summary: string;
   standards: AnalyticStandard[];
+  vectorResults: EvaluationVectorResult[];
+  historicalRatings: HistoricalRating[];
+  trendAnalysis: TrendAnalysis;
 }

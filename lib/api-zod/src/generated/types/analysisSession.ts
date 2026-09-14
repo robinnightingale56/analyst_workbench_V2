@@ -18,5 +18,6 @@ export interface AnalysisSession {
   status: AnalysisSessionStatus;
   createdAt: string;
   sourceFiles: SourceFile[];
+  sourceNotices: string[];
   assessment: Assessment | null;
 }

@@ -16,6 +16,7 @@ import {
   Loader2,
   LockKeyhole,
   Menu,
+  Minus,
   Network,
   Play,
   Plus,
@@ -25,6 +26,8 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Target,
+  TrendingDown,
+  TrendingUp,
   X,
   Zap,
 } from 'lucide-react';
@@ -38,6 +41,8 @@ import {
   useHealthCheck,
   useListAnalysisSessions,
   useListSourceConnectors,
+  useListEvaluationVectors,
+  useListHistoricalRatings,
   useRunResearch,
   getGetAnalysisSessionQueryKey,
   type AnalysisSession,
@@ -87,9 +92,9 @@ function formatDateTime(value?: string) {
 }
 
 function statusTone(status?: string) {
-  if (status === 'COMPLETE' || status === 'READY' || status === 'PASS') return 'bg-[hsl(174_44%_43%_/_0.13)] text-[hsl(174_44%_32%)] border-[hsl(174_44%_43%_/_0.3)]';
-  if (status === 'RESEARCHING' || status === 'ASSESSING' || status === 'REVIEW') return 'bg-[hsl(39_92%_65%_/_0.18)] text-[hsl(30_69%_32%)] border-[hsl(39_92%_65%_/_0.45)]';
-  if (status === 'GAP' || status === 'NEEDS_CONFIGURATION') return 'bg-[hsl(5_69%_48%_/_0.1)] text-[hsl(5_69%_40%)] border-[hsl(5_69%_48%_/_0.25)]';
+  if (status === 'COMPLETE' || status === 'READY' || status === 'PASS' || status === 'STRONG') return 'bg-[hsl(174_44%_43%_/_0.13)] text-[hsl(174_44%_32%)] border-[hsl(174_44%_43%_/_0.3)]';
+  if (status === 'RESEARCHING' || status === 'ASSESSING' || status === 'REVIEW' || status === 'MIXED') return 'bg-[hsl(39_92%_65%_/_0.18)] text-[hsl(30_69%_32%)] border-[hsl(39_92%_65%_/_0.45)]';
+  if (status === 'GAP' || status === 'NEEDS_CONFIGURATION' || status === 'WEAK') return 'bg-[hsl(5_69%_48%_/_0.1)] text-[hsl(5_69%_40%)] border-[hsl(5_69%_48%_/_0.25)]';
   return 'bg-[hsl(216_22%_93%)] text-[hsl(218_13%_46%)] border-[hsl(220_18%_86%)]';
 }
 
@@ -154,8 +159,9 @@ function ConnectorPicker({ connectors, selected, setSelected, loading, error }: 
   return <div className="grid gap-2 md:grid-cols-2" data-testid="connector-list">{connectors.map((connector) => {
     const ready = connector.status === SourceConnectorStatus.READY;
     const active = selected.includes(connector.id);
+    const isLive = connector.mode === 'LIVE';
     return <button type="button" disabled={!ready} key={connector.id} onClick={() => setSelected(active ? selected.filter((id) => id !== connector.id) : [...selected, connector.id])} className={`flex items-start gap-3 border p-3 text-left transition-all ${active ? 'border-[hsl(39_92%_65%)] bg-[hsl(39_92%_65%_/_0.1)]' : 'border-border bg-card hover:border-[hsl(39_92%_65%_/_0.65)]'} ${!ready ? 'cursor-not-allowed opacity-55' : ''}`} data-testid={`button-connector-${connector.id}`}>
-      <span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center border ${active ? 'border-primary bg-primary text-primary-foreground' : 'border-input bg-background'}`}>{active ? <Check size={11} /> : null}</span><span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-2"><span className="text-sm font-semibold text-foreground">{connector.name}</span><StatusPill status={connector.status} /></span><span className="mt-1 block text-xs leading-5 text-muted-foreground">{connector.description}</span><span className="mono mt-2 block text-[9px] uppercase tracking-[0.08em] text-muted-foreground/80">{connector.sourceTypes.join(' / ')}</span></span>
+      <span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center border ${active ? 'border-primary bg-primary text-primary-foreground' : 'border-input bg-background'}`}>{active ? <Check size={11} /> : null}</span><span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-2"><span className="text-sm font-semibold text-foreground flex items-center gap-2">{connector.name} {isLive ? <span className="inline-flex items-center border border-[hsl(174_44%_43%_/_0.4)] bg-[hsl(174_44%_43%_/_0.1)] px-1.5 py-0.5 text-[9px] font-semibold tracking-[0.08em] text-[hsl(174_44%_32%)]">LIVE</span> : <span className="inline-flex items-center border border-[hsl(39_92%_65%_/_0.4)] bg-[hsl(39_92%_65%_/_0.1)] px-1.5 py-0.5 text-[9px] font-semibold tracking-[0.08em] text-[hsl(30_69%_32%)]">SYNTHETIC</span>}</span><StatusPill status={connector.status} /></span><span className="mt-1 block text-xs leading-5 text-muted-foreground">{connector.description}</span><span className="mono mt-2 block text-[9px] uppercase tracking-[0.08em] text-muted-foreground/80">{connector.sourceTypes.join(' / ')}</span></span>
     </button>;
   })}</div>;
 }
@@ -164,6 +170,10 @@ function SourceCard({ source, selected, onToggle }: { source: SourceFile; select
   return <article className={`relative border bg-card p-5 transition-all ${selected ? 'border-[hsl(39_92%_65%)] shadow-[inset_3px_0_0_hsl(39_92%_65%)]' : 'border-card-border hover:border-[hsl(220_18%_74%)]'}`} data-testid={`card-source-${source.id}`}>
     <div className="flex items-start justify-between gap-4"><div className="flex min-w-0 items-center gap-2"><span className="grid h-7 w-7 shrink-0 place-items-center bg-secondary text-secondary-foreground"><FileText size={14} /></span><div className="min-w-0"><div className="mono truncate text-[10px] uppercase tracking-[0.09em] text-muted-foreground">{source.source} / {source.sourceType}</div><h3 className="mt-1 line-clamp-2 text-sm font-semibold leading-5 text-foreground">{source.title}</h3></div></div><button type="button" onClick={onToggle} className={`grid h-7 w-7 shrink-0 place-items-center border transition-colors ${selected ? 'border-primary bg-primary text-primary-foreground' : 'border-input text-muted-foreground hover:border-primary hover:text-primary'}`} aria-label={selected ? 'Remove source from assessment' : 'Select source for assessment'} data-testid={`button-select-source-${source.id}`}>{selected ? <Check size={14} /> : <Plus size={15} />}</button></div>
     <div className="mt-4 border-l-2 border-[hsl(39_92%_65%_/_0.7)] pl-3 text-[13px] leading-5 text-foreground/85"><span className="mono mr-2 text-[9px] uppercase tracking-[0.12em] text-muted-foreground">BLUF</span>{source.bluf}</div>
+    <div className="mt-3 flex items-center gap-4 text-[10px] text-muted-foreground">
+      {source.collectionMethod && <div className="flex items-center gap-1.5"><Database size={12} /><span className="mono uppercase tracking-[0.08em]">{source.collectionMethod}</span></div>}
+      {source.retrievedAt && <div className="flex items-center gap-1.5"><Clock3 size={12} /><span className="mono uppercase tracking-[0.08em]">{formatDateTime(source.retrievedAt)}</span></div>}
+    </div>
     <div className="mt-4 grid grid-cols-2 gap-3 border-t border-border/70 pt-3"><div><div className="mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground">Relevance</div><div className="mt-1 flex items-center gap-2"><div className="h-1.5 flex-1 bg-secondary"><div className="h-full bg-[hsl(174_44%_43%)]" style={{ width: `${Math.round(source.relevance * 100)}%` }} /></div><span className="mono text-[10px] font-medium">{Math.round(source.relevance * 100)}%</span></div></div><div><div className="mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground">Reliability</div><div className="mt-1"><StatusPill status={source.reliability} /></div></div></div>
     <div className="mt-4 flex flex-wrap gap-1.5">{source.tags.map((tag) => <span className="mono border border-border bg-muted px-1.5 py-0.5 text-[9px] uppercase tracking-[0.08em] text-muted-foreground" key={tag}>{tag}</span>)}</div>
     <a className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-[hsl(174_44%_32%)] hover:underline" href={source.url} target="_blank" rel="noreferrer" data-testid={`link-source-${source.id}`}>Open source <ArrowUpRight size={12} /></a>
@@ -229,13 +239,183 @@ function Home() {
       <div className="grid gap-6 p-5 md:p-6 lg:grid-cols-[1.25fr_0.75fr]"><div><label htmlFor="research-prompt" className="section-kicker">Intelligence question</label><textarea id="research-prompt" rows={4} value={prompt || session?.prompt || ''} onChange={(event) => setPrompt(event.target.value)} placeholder="What do you need to know, and by when?" className="mt-2 w-full resize-none border border-input bg-background px-4 py-3 text-sm leading-6 text-foreground placeholder:text-muted-foreground/70 focus:border-primary" data-testid="input-research-prompt" /><div className="mt-3 flex flex-wrap items-center gap-3"><label className="mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground" htmlFor="classification">Classification</label><select id="classification" value={classification} onChange={(event) => setClassification(event.target.value as keyof typeof AnalysisSessionClassification)} className="border border-input bg-background px-2.5 py-1.5 text-xs text-foreground" data-testid="select-classification">{Object.values(AnalysisSessionClassification).map((value) => <option key={value} value={value}>{value}</option>)}</select><span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"><LockKeyhole size={12} /> Applied to the session record</span></div><button onClick={startSession} disabled={isBusy} className="mt-5 inline-flex items-center gap-2 bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-create-session">{createSession.isPending ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}{session ? 'Reset with new question' : 'Create analysis session'}</button></div><div className="border-l border-border/70 pl-0 lg:pl-6"><div className="section-kicker">Source posture</div><p className="mt-2 text-xs leading-5 text-muted-foreground">Only adapters marked ready can be selected. Unavailable sources remain visible as a readiness signal.</p><div className="mt-4"><ConnectorPicker connectors={connectorsQuery.data} selected={selectedConnectors} setSelected={setSelectedConnectors} loading={connectorsQuery.isLoading} error={Boolean(connectorsQuery.error)} /></div></div></div>
       {actionError ? <div className="flex items-center gap-2 border-t border-[hsl(5_69%_48%_/_0.22)] bg-[hsl(5_69%_48%_/_0.05)] px-5 py-3 text-xs text-[hsl(5_69%_40%)]" data-testid="error-workbench-action"><CircleAlert size={14} />{actionError}<button className="ml-auto" onClick={() => setActionError('')} aria-label="Dismiss error" data-testid="button-dismiss-error"><X size={14} /></button></div> : null}
     </section>
-    <section className="rise rise-delay-1" data-testid="panel-research-results"><div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><div className="section-kicker">02 / Source review</div><h2 className="display mt-1 text-2xl font-bold tracking-tight">BLUF evidence board</h2></div><div className="flex items-center gap-3 text-xs text-muted-foreground"><span className="mono">{selectedSources.length} selected</span>{session?.status === 'READY_FOR_SELECTION' ? <button onClick={beginAssessment} disabled={createAssessment.isPending || !selectedSources.length} className="inline-flex items-center gap-2 bg-[hsl(174_44%_32%)] px-3 py-2 font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-45" data-testid="button-start-assessment">{createAssessment.isPending ? <Loader2 size={14} className="animate-spin" /> : <ClipboardCheck size={14} />}Start assessment</button> : null}</div></div>{sessionQuery.isLoading && activeSessionId ? <LoadingRows count={2} /> : sources.length ? <div className="grid gap-4 xl:grid-cols-2">{sources.map((source) => <SourceCard key={source.id} source={source} selected={selectedSources.includes(source.id)} onToggle={() => setSelectedSources((current) => current.includes(source.id) ? current.filter((id) => id !== source.id) : [...current, source.id])} />)}</div> : <EmptyState icon={Radio} title="No source-backed findings yet" detail={session ? 'Run research with one or more ready adapters. Results will appear here with BLUF summaries, provenance, and reliability signals.' : 'Create an analysis session to unlock the evidence board.'} action={!session ? <button onClick={() => document.getElementById('research-prompt')?.focus()} className="inline-flex items-center gap-2 border border-border bg-card px-3 py-2 text-xs font-semibold hover:border-primary" data-testid="button-focus-question"><Target size={14} />Focus the question</button> : undefined} />}</section>
+    <section className="rise rise-delay-1" data-testid="panel-research-results">
+      <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+        <div>
+          <div className="section-kicker">02 / Source review</div>
+          <h2 className="display mt-1 text-2xl font-bold tracking-tight">BLUF evidence board</h2>
+        </div>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span className="mono">{selectedSources.length} selected</span>
+          {session?.status === 'READY_FOR_SELECTION' ? <button onClick={beginAssessment} disabled={createAssessment.isPending || !selectedSources.length} className="inline-flex items-center gap-2 bg-[hsl(174_44%_32%)] px-3 py-2 font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-45" data-testid="button-start-assessment">{createAssessment.isPending ? <Loader2 size={14} className="animate-spin" /> : <ClipboardCheck size={14} />}Start assessment</button> : null}
+        </div>
+      </div>
+      
+      {session?.sourceNotices && session.sourceNotices.length > 0 ? (
+        <div className="mb-5 border border-[hsl(39_92%_65%_/_0.4)] bg-[hsl(39_92%_65%_/_0.1)] p-4 text-sm text-[hsl(30_69%_32%)]">
+          <div className="mb-2 flex items-center gap-2 font-semibold"><CircleAlert size={15}/> Provider Notices</div>
+          <ul className="list-inside list-disc space-y-1 pl-1">
+            {session.sourceNotices.map((notice, i) => <li key={i}>{notice}</li>)}
+          </ul>
+        </div>
+      ) : null}
+
+      {sessionQuery.isLoading && activeSessionId ? (
+        <LoadingRows count={2} />
+      ) : sources.length ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          {sources.map((source) => <SourceCard key={source.id} source={source} selected={selectedSources.includes(source.id)} onToggle={() => setSelectedSources((current) => current.includes(source.id) ? current.filter((id) => id !== source.id) : [...current, source.id])} />)}
+        </div>
+      ) : (
+        <EmptyState 
+          icon={Radio} 
+          title={session?.sourceNotices?.length ? "Research returned no results" : "No source-backed findings yet"} 
+          detail={session ? (session.sourceNotices?.length ? "The selected providers failed to return any valid sources for this query. See provider notices above." : 'Run research with one or more ready adapters. Results will appear here with BLUF summaries, provenance, and reliability signals.') : 'Create an analysis session to unlock the evidence board.'} 
+          action={!session ? <button onClick={() => document.getElementById('research-prompt')?.focus()} className="inline-flex items-center gap-2 border border-border bg-card px-3 py-2 text-xs font-semibold hover:border-primary" data-testid="button-focus-question"><Target size={14} />Focus the question</button> : undefined} 
+        />
+      )}
+    </section>
     {session?.assessment ? <AssessmentSummary assessment={session.assessment} /> : null}
   </div>;
 }
 
 function AssessmentSummary({ assessment }: { assessment: NonNullable<AnalysisSession['assessment']> }) {
-  return <section className="rise border border-[hsl(174_44%_43%_/_0.35)] bg-[hsl(174_44%_43%_/_0.06)] p-5 md:p-6" data-testid="panel-assessment-summary"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start"><div><div className="section-kicker text-[hsl(174_44%_32%)]">Assessment complete</div><h2 className="display mt-1 text-2xl font-bold">A defensible judgment, ready for review.</h2></div><div className="flex items-end gap-2"><span className="display text-4xl font-bold text-[hsl(174_44%_32%)]">{assessment.overallScore}</span><span className="mono mb-1 text-[10px] uppercase text-muted-foreground">/ 100</span></div></div><p className="mt-4 max-w-3xl text-sm leading-6 text-foreground/80">{assessment.summary}</p><div className="mt-5 grid gap-2 sm:grid-cols-3 lg:grid-cols-5">{assessment.standards.map((standard) => <div className="border border-border/70 bg-card/70 p-3" key={standard.id}><div className="flex items-center justify-between"><span className="mono text-[10px] font-medium">{standard.shortName}</span><span className="text-sm font-bold">{standard.score}</span></div><div className="mt-2 h-1 bg-secondary"><div className="h-full bg-[hsl(174_44%_43%)]" style={{ width: `${standard.score}%` }} /></div><div className="mt-2"><StatusPill status={standard.status} /></div></div>)}</div></section>;
+  const historyQuery = useListHistoricalRatings();
+  const historicalRatings = assessment.historicalRatings?.length ? assessment.historicalRatings : (historyQuery.data ?? []);
+
+  return <section className="rise border border-[hsl(174_44%_43%_/_0.35)] bg-[hsl(174_44%_43%_/_0.06)] p-5 md:p-6" data-testid="panel-assessment-summary">
+    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+      <div>
+        <div className="section-kicker text-[hsl(174_44%_32%)]">Assessment complete</div>
+        <h2 className="display mt-1 text-2xl font-bold">A defensible judgment, ready for review.</h2>
+      </div>
+      <div className="flex items-end gap-2">
+        <span className="display text-4xl font-bold text-[hsl(174_44%_32%)]">{assessment.overallScore}</span>
+        <span className="mono mb-1 text-[10px] uppercase text-muted-foreground">/ 100</span>
+      </div>
+    </div>
+    <p className="mt-4 max-w-3xl text-sm leading-6 text-foreground/80">{assessment.summary}</p>
+
+    {assessment.trendAnalysis ? (
+      <div className="mt-6 flex flex-col gap-4 lg:flex-row">
+        <div className="flex flex-1 flex-col border border-[hsl(220_18%_86%)] bg-card p-5 shadow-sm">
+          <div className="section-kicker">Trend analysis & recommendation</div>
+          <div className="mt-4 flex items-center gap-6">
+            <div className="flex flex-col">
+              <span className="mono text-[10px] uppercase tracking-[0.05em] text-muted-foreground">Prior year</span>
+              <span className="mt-1 text-lg font-bold">{assessment.trendAnalysis.previousRating}</span>
+            </div>
+            <div className="flex items-center text-muted-foreground">
+              <ChevronRight size={18} />
+            </div>
+            <div className="flex flex-col">
+              <span className="mono text-[10px] uppercase tracking-[0.05em] text-muted-foreground">Recommended</span>
+              <span className="mt-1 text-lg font-bold">{assessment.trendAnalysis.recommendedRating}</span>
+            </div>
+            <div className="ml-auto flex items-center justify-center border-l border-border/70 pl-6">
+              {assessment.trendAnalysis.direction === 'UP' ? (
+                <div className="flex flex-col items-center text-[hsl(5_69%_48%)]">
+                  <TrendingUp size={28} strokeWidth={2.5} />
+                  <span className="mt-1 font-bold text-xs tracking-widest">UP</span>
+                </div>
+              ) : assessment.trendAnalysis.direction === 'DOWN' ? (
+                <div className="flex flex-col items-center text-[hsl(174_44%_43%)]">
+                  <TrendingDown size={28} strokeWidth={2.5} />
+                  <span className="mt-1 font-bold text-xs tracking-widest">DOWN</span>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center text-[hsl(30_69%_32%)]">
+                  <Minus size={28} strokeWidth={2.5} />
+                  <span className="mt-1 font-bold text-xs tracking-widest">SAME</span>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="mt-5 flex items-center gap-2 text-sm text-foreground/80">
+            <span className="font-semibold">Confidence:</span>
+            <StatusPill status={assessment.trendAnalysis.confidence} />
+          </div>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">{assessment.trendAnalysis.rationale}</p>
+          {assessment.trendAnalysis.drivers?.length > 0 && (
+            <div className="mt-5 border-t border-border/70 pt-4">
+              <div className="mono mb-2 text-[10px] uppercase tracking-[0.1em] text-muted-foreground">Key Drivers</div>
+              <ul className="list-inside list-disc space-y-1 pl-1 text-sm text-foreground/80">
+                {assessment.trendAnalysis.drivers.map((driver, idx) => (
+                  <li key={idx}>{driver}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+        
+        {historicalRatings.length > 0 && (
+          <div className="flex w-full flex-col border border-[hsl(220_18%_86%)] bg-card lg:w-72 shadow-sm">
+            <div className="border-b border-border/70 bg-muted/40 px-5 py-4">
+              <div className="section-kicker">Prior-year history</div>
+            </div>
+            <div className="flex-1 divide-y divide-border/60">
+              {historicalRatings.map((hr) => (
+                <div key={hr.year} className="p-4 px-5">
+                  <div className="flex items-center justify-between">
+                    <span className="mono text-sm font-bold text-foreground">{hr.year}</span>
+                    <StatusPill status={hr.rating} />
+                  </div>
+                  <div className="mt-2 text-xs leading-5 text-muted-foreground">{hr.summary}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    ) : null}
+
+    <div className="mt-8 border-t border-border/60 pt-6">
+      <div className="section-kicker mb-4 text-foreground/80">ICD-203 Tradecraft Standards</div>
+      <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        {assessment.standards.map((standard) => (
+          <div className="border border-border/70 bg-card/70 p-3" key={standard.id}>
+            <div className="flex items-center justify-between">
+              <span className="mono text-[10px] font-medium">{standard.shortName}</span>
+              <span className="text-sm font-bold">{standard.score}</span>
+            </div>
+            <div className="mt-2 h-1 bg-secondary">
+              <div className="h-full bg-[hsl(174_44%_43%)]" style={{ width: `${standard.score}%` }} />
+            </div>
+            <div className="mt-2"><StatusPill status={standard.status} /></div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    {assessment.vectorResults?.length > 0 && (
+      <div className="mt-6 border-t border-border/60 pt-6">
+        <div className="section-kicker mb-4 text-foreground/80">Stand-in Evaluation Vectors</div>
+        <div className="grid gap-3 lg:grid-cols-2">
+          {assessment.vectorResults.map((vector) => (
+            <div className="flex flex-col border border-border/70 bg-card/70 p-4" key={vector.id}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold">{vector.name}</div>
+                  <div className="mono mt-1 text-[9px] uppercase tracking-[0.08em] text-muted-foreground">Weight: {(vector.weight * 100).toFixed(0)}%</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold">{vector.score}</span>
+                  <StatusPill status={vector.status} />
+                </div>
+              </div>
+              <p className="mt-3 text-xs leading-5 text-muted-foreground">{vector.rationale}</p>
+              {vector.evidenceSourceFileIds?.length > 0 && (
+                <div className="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
+                  <FileText size={12} />
+                  <span className="mono text-[9px] uppercase tracking-[0.08em]">Supported by {vector.evidenceSourceFileIds.length} source{vector.evidenceSourceFileIds.length !== 1 ? 's' : ''}</span>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+  </section>;
 }
 
 function SessionsPage() {
@@ -246,13 +426,75 @@ function SessionsPage() {
 
 function StandardsPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
-  return <div className="space-y-7"><div><div className="section-kicker">Review doctrine</div><h1 className="display mt-2 text-3xl font-bold tracking-tight">ICD-203 standards</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Nine review lenses keep production honest. Use them to interrogate the evidence, the reasoning, and the decision value of an assessment.</p></div><div className="grid gap-3 lg:grid-cols-2">{standards.map((standard, index) => <article className={`border bg-card transition-colors ${expanded === standard.id ? 'border-[hsl(39_92%_65%)]' : 'border-card-border'}`} key={standard.id} data-testid={`card-standard-${standard.id}`}><button onClick={() => setExpanded(expanded === standard.id ? null : standard.id)} className="flex w-full items-center gap-4 px-5 py-4 text-left" data-testid={`button-expand-standard-${standard.id}`}><span className="mono text-xs text-muted-foreground">{String(index + 1).padStart(2, '0')}</span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{standard.name}</span><span className="mono mt-1 block text-[10px] uppercase tracking-[0.09em] text-muted-foreground">{standard.shortName}</span></span><span className="grid h-7 w-7 place-items-center border border-border text-muted-foreground">{expanded === standard.id ? <X size={13} /> : <ChevronRight size={14} />}</span></button>{expanded === standard.id ? <div className="border-t border-border/70 bg-muted/35 px-5 pb-5 pt-4"><div className="section-kicker">Review guidance</div><p className="mt-2 text-sm leading-6 text-foreground/80">{standard.finding}</p><div className="mt-4 border-l-2 border-[hsl(39_92%_65%)] pl-3 text-xs italic leading-5 text-muted-foreground">{standard.prompt}</div></div> : null}</article>)}</div><div className="border border-border bg-[hsl(222_38%_15%)] p-5 text-sidebar-foreground md:p-6"><div className="flex items-start gap-3"><ClipboardCheck size={18} className="mt-0.5 text-sidebar-primary" /><div><div className="section-kicker text-sidebar-foreground/55">In practice</div><p className="mt-2 max-w-2xl text-sm leading-6 text-sidebar-foreground/80">Standards are prompts for disciplined review, not a substitute for analyst judgment. A gap is a collection or reasoning task to resolve before release.</p></div></div></div></div>;
+  const [expandedVector, setExpandedVector] = useState<string | null>(null);
+  const vectorsQuery = useListEvaluationVectors();
+
+  return <div className="space-y-10">
+    <div>
+      <div className="section-kicker">Review doctrine</div>
+      <h1 className="display mt-2 text-3xl font-bold tracking-tight">Tradecraft standards & Vectors</h1>
+      <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Nine review lenses keep production honest, paired with dynamic grading vectors configured for the operational environment.</p>
+    </div>
+
+    <section className="space-y-5">
+      <div>
+        <h2 className="text-xl font-bold">ICD-203 Standards</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Analytic tradecraft standards applied to every assessment.</p>
+      </div>
+      <div className="grid gap-3 lg:grid-cols-2">{standards.map((standard, index) => <article className={`border bg-card transition-colors ${expanded === standard.id ? 'border-[hsl(39_92%_65%)]' : 'border-card-border'}`} key={standard.id} data-testid={`card-standard-${standard.id}`}><button onClick={() => setExpanded(expanded === standard.id ? null : standard.id)} className="flex w-full items-center gap-4 px-5 py-4 text-left" data-testid={`button-expand-standard-${standard.id}`}><span className="mono text-xs text-muted-foreground">{String(index + 1).padStart(2, '0')}</span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{standard.name}</span><span className="mono mt-1 block text-[10px] uppercase tracking-[0.09em] text-muted-foreground">{standard.shortName}</span></span><span className="grid h-7 w-7 place-items-center border border-border text-muted-foreground">{expanded === standard.id ? <X size={13} /> : <ChevronRight size={14} />}</span></button>{expanded === standard.id ? <div className="border-t border-border/70 bg-muted/35 px-5 pb-5 pt-4"><div className="section-kicker">Review guidance</div><p className="mt-2 text-sm leading-6 text-foreground/80">{standard.finding}</p><div className="mt-4 border-l-2 border-[hsl(39_92%_65%)] pl-3 text-xs italic leading-5 text-muted-foreground">{standard.prompt}</div></div> : null}</article>)}</div>
+    </section>
+
+    <section className="space-y-5">
+      <div>
+        <h2 className="text-xl font-bold">Stand-in Evaluation Vectors</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Configurable criteria used for automated assessment scoring.</p>
+      </div>
+      
+      {vectorsQuery.isLoading ? <LoadingRows count={3} /> : vectorsQuery.error ? <EmptyState icon={CircleAlert} title="Vectors unavailable" detail="The evaluation vector registry could not be reached." /> : <div className="grid gap-3 lg:grid-cols-2">
+        {vectorsQuery.data?.map((vector, index) => <article className={`border bg-card transition-colors ${expandedVector === vector.id ? 'border-[hsl(174_44%_43%)]' : 'border-card-border'}`} key={vector.id} data-testid={`card-vector-${vector.id}`}><button onClick={() => setExpandedVector(expandedVector === vector.id ? null : vector.id)} className="flex w-full items-center gap-4 px-5 py-4 text-left" data-testid={`button-expand-vector-${vector.id}`}><span className="mono text-xs text-muted-foreground">V{String(index + 1).padStart(2, '0')}</span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{vector.name}</span><span className="mono mt-1 block text-[10px] uppercase tracking-[0.09em] text-muted-foreground">Weight: {(vector.weight * 100).toFixed(0)}%</span></span><span className="grid h-7 w-7 place-items-center border border-border text-muted-foreground">{expandedVector === vector.id ? <X size={13} /> : <ChevronRight size={14} />}</span></button>{expandedVector === vector.id ? <div className="border-t border-border/70 bg-muted/35 px-5 pb-5 pt-4">
+          <div className="flex items-center gap-2 mb-3">
+            {vector.placeholder ? <span className="inline-flex items-center border border-[hsl(39_92%_65%_/_0.4)] bg-[hsl(39_92%_65%_/_0.1)] px-2 py-0.5 text-[10px] font-semibold tracking-[0.08em] text-[hsl(30_69%_32%)]">PLACEHOLDER</span> : <span className="inline-flex items-center border border-[hsl(174_44%_43%_/_0.4)] bg-[hsl(174_44%_43%_/_0.1)] px-2 py-0.5 text-[10px] font-semibold tracking-[0.08em] text-[hsl(174_44%_32%)]">ACTIVE</span>}
+          </div>
+          <div className="section-kicker">Vector definition</div>
+          <p className="mt-2 text-sm leading-6 text-foreground/80">{vector.description}</p>
+        </div> : null}</article>)}
+        {!vectorsQuery.data?.length ? <EmptyState icon={SlidersHorizontal} title="No evaluation vectors" detail="No active stand-in grading vectors are configured in this environment." /> : null}
+      </div>}
+    </section>
+
+    <div className="border border-border bg-[hsl(222_38%_15%)] p-5 text-sidebar-foreground md:p-6"><div className="flex items-start gap-3"><ClipboardCheck size={18} className="mt-0.5 text-sidebar-primary" /><div><div className="section-kicker text-sidebar-foreground/55">In practice</div><p className="mt-2 max-w-2xl text-sm leading-6 text-sidebar-foreground/80">Standards are prompts for disciplined review, not a substitute for analyst judgment. A gap is a collection or reasoning task to resolve before release.</p></div></div></div>
+  </div>;
 }
 
 function SettingsPage() {
   const connectorsQuery = useListSourceConnectors();
   const healthQuery = useHealthCheck();
-  return <div className="space-y-7"><div><div className="section-kicker">Workspace controls</div><h1 className="display mt-2 text-3xl font-bold tracking-tight">Settings</h1><p className="mt-2 text-sm text-muted-foreground">Review classification posture and source connector readiness. Configuration changes are managed by the workspace administrator.</p></div><div className="grid gap-5 lg:grid-cols-[0.8fr_1.2fr]"><section className="border border-card-border bg-card p-5 md:p-6"><div className="flex items-center gap-3 border-b border-border/70 pb-4"><LockKeyhole size={18} className="text-[hsl(39_92%_48%)]" /><div><div className="text-sm font-semibold">Workspace classification</div><div className="text-xs text-muted-foreground">Applied at session creation</div></div></div><div className="mt-5 space-y-3">{['UNCLASSIFIED', 'CUI', 'SECRET', 'TS'].map((level, index) => <div className={`flex items-center justify-between border p-3 ${index === 0 ? 'border-[hsl(39_92%_65%)] bg-[hsl(39_92%_65%_/_0.09)]' : 'border-border bg-muted/30 opacity-65'}`} key={level}><div><div className="mono text-xs font-medium">{level}</div><div className="mt-1 text-[11px] text-muted-foreground">{index === 0 ? 'Available in this workspace' : 'Restricted by workspace policy'}</div></div>{index === 0 ? <Check size={15} className="text-[hsl(174_44%_43%)]" /> : <LockKeyhole size={13} className="text-muted-foreground" />}</div>)}</div></section><section className="border border-card-border bg-card p-5 md:p-6"><div className="flex items-center justify-between border-b border-border/70 pb-4"><div className="flex items-center gap-3"><Database size={18} className="text-[hsl(174_44%_43%)]" /><div><div className="text-sm font-semibold">Source connectors</div><div className="text-xs text-muted-foreground">Readiness is evaluated by the API</div></div></div><div className="flex items-center gap-2 text-xs text-muted-foreground"><span className={`h-1.5 w-1.5 ${healthQuery.data?.status === 'ok' ? 'bg-[hsl(174_44%_43%)]' : 'bg-[hsl(39_92%_65%)]'}`} />API {healthQuery.isLoading ? 'checking' : healthQuery.data?.status ?? 'unavailable'}</div></div>{connectorsQuery.isLoading ? <div className="mt-5"><LoadingRows count={3} /></div> : connectorsQuery.error ? <div className="mt-5"><EmptyState icon={CircleAlert} title="Readiness is unavailable" detail="The connector registry could not be reached. No connector is presented as ready." /></div> : <div className="mt-5 space-y-2">{connectorsQuery.data?.map((connector) => <div className="flex items-center gap-3 border border-border/75 p-3" key={connector.id} data-testid={`row-connector-${connector.id}`}><div className="grid h-8 w-8 place-items-center bg-muted text-muted-foreground"><Network size={15} /></div><div className="min-w-0 flex-1"><div className="text-sm font-semibold">{connector.name}</div><div className="mt-1 truncate text-xs text-muted-foreground">{connector.description}</div></div><StatusPill status={connector.status} /></div>)}{!connectorsQuery.data?.length ? <EmptyState icon={Network} title="No connectors configured" detail="There are no source adapters available to this workspace." /> : null}</div>}</section></div></div>;
+  return <div className="space-y-7">
+    <div>
+      <div className="section-kicker">Workspace controls</div>
+      <h1 className="display mt-2 text-3xl font-bold tracking-tight">Settings</h1>
+      <p className="mt-2 text-sm text-muted-foreground">Review classification posture and source connector readiness. Configuration changes are managed by the workspace administrator.</p>
+    </div>
+    
+    <div className="grid gap-5 lg:grid-cols-[0.8fr_1.2fr]">
+      <div className="flex flex-col gap-5">
+        <section className="border border-card-border bg-card p-5 md:p-6">
+          <div className="flex items-center gap-3 border-b border-border/70 pb-4"><LockKeyhole size={18} className="text-[hsl(39_92%_48%)]" /><div><div className="text-sm font-semibold">Workspace classification</div><div className="text-xs text-muted-foreground">Applied at session creation</div></div></div><div className="mt-5 space-y-3">{['UNCLASSIFIED', 'CUI', 'SECRET', 'TS'].map((level, index) => <div className={`flex items-center justify-between border p-3 ${index === 0 ? 'border-[hsl(39_92%_65%)] bg-[hsl(39_92%_65%_/_0.09)]' : 'border-border bg-muted/30 opacity-65'}`} key={level}><div><div className="mono text-xs font-medium">{level}</div><div className="mt-1 text-[11px] text-muted-foreground">{index === 0 ? 'Available in this workspace' : 'Restricted by workspace policy'}</div></div>{index === 0 ? <Check size={15} className="text-[hsl(174_44%_43%)]" /> : <LockKeyhole size={13} className="text-muted-foreground" />}</div>)}</div>
+        </section>
+        <section className="border border-card-border bg-card p-5 md:p-6" data-testid="panel-settings-vectors">
+          <div className="flex items-center gap-3 border-b border-border/70 pb-4"><SlidersHorizontal size={18} className="text-[hsl(174_44%_43%)]" /><div><div className="text-sm font-semibold">Evaluation Vectors</div><div className="text-xs text-muted-foreground">Stand-in grading criteria</div></div></div>
+          <div className="mt-4 border-l-2 border-[hsl(39_92%_65%)] pl-3">
+            <p className="text-sm font-medium leading-6 text-foreground/80">Placeholder vectors are unclassified substitutes.</p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">Restricted criteria must be configured only in the approved target environment.</p>
+          </div>
+        </section>
+      </div>
+
+      <section className="border border-card-border bg-card p-5 md:p-6">
+        <div className="flex items-center justify-between border-b border-border/70 pb-4"><div className="flex items-center gap-3"><Database size={18} className="text-[hsl(174_44%_43%)]" /><div><div className="text-sm font-semibold">Source connectors</div><div className="text-xs text-muted-foreground">Readiness is evaluated by the API</div></div></div><div className="flex items-center gap-2 text-xs text-muted-foreground"><span className={`h-1.5 w-1.5 ${healthQuery.data?.status === 'ok' ? 'bg-[hsl(174_44%_43%)]' : 'bg-[hsl(39_92%_65%)]'}`} />API {healthQuery.isLoading ? 'checking' : healthQuery.data?.status ?? 'unavailable'}</div></div>{connectorsQuery.isLoading ? <div className="mt-5"><LoadingRows count={3} /></div> : connectorsQuery.error ? <div className="mt-5"><EmptyState icon={CircleAlert} title="Readiness is unavailable" detail="The connector registry could not be reached. No connector is presented as ready." /></div> : <div className="mt-5 space-y-2">{connectorsQuery.data?.map((connector) => <div className="flex items-center gap-3 border border-border/75 p-3" key={connector.id} data-testid={`row-connector-${connector.id}`}><div className="grid h-8 w-8 place-items-center bg-muted text-muted-foreground"><Network size={15} /></div><div className="min-w-0 flex-1"><div className="text-sm font-semibold">{connector.name}</div><div className="mt-1 truncate text-xs text-muted-foreground">{connector.description}</div></div><StatusPill status={connector.status} /></div>)}{!connectorsQuery.data?.length ? <EmptyState icon={Network} title="No connectors configured" detail="There are no source adapters available to this workspace." /> : null}</div>}
+      </section>
+    </div>
+  </div>;
 }
 
 function Router() {

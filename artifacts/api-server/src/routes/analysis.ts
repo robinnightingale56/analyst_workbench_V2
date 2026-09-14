@@ -8,6 +8,8 @@ import {
   GetAnalysisSessionParams,
   GetAnalysisSessionResponse,
   ListAnalysisSessionsResponse,
+  ListEvaluationVectorsResponse,
+  ListHistoricalRatingsResponse,
   ListSourceConnectorsResponse,
   RunResearchBody,
   RunResearchParams,
@@ -20,6 +22,10 @@ import {
   listSessions,
   runSessionResearch,
 } from "../lib/analysis-store";
+import {
+  evaluationVectors,
+  historicalRatings,
+} from "../lib/analysis-engine";
 import { sourceConnectors } from "../lib/source-adapters";
 
 const router: IRouter = Router();
@@ -52,7 +58,7 @@ router.get("/analysis-sessions/:sessionId", (req, res) => {
   res.json(GetAnalysisSessionResponse.parse(session));
 });
 
-router.post("/analysis-sessions/:sessionId/research", (req, res) => {
+router.post("/analysis-sessions/:sessionId/research", async (req, res): Promise<void> => {
   const params = RunResearchParams.safeParse(req.params);
   const body = RunResearchBody.safeParse(req.body);
   if (!params.success) {
@@ -63,14 +69,22 @@ router.post("/analysis-sessions/:sessionId/research", (req, res) => {
     res.status(400).json({ error: body.error.message });
     return;
   }
-  const session = runSessionResearch(params.data.sessionId, body.data.maxResults);
+  if (body.data.sourceConnectorIds.length === 0) {
+    res.status(400).json({ error: "Select at least one source connector" });
+    return;
+  }
+  const session = await runSessionResearch(
+    params.data.sessionId,
+    body.data.sourceConnectorIds,
+    body.data.maxResults,
+  );
   if (!session) {
     res.status(404).json({ error: "Analysis session not found" });
     return;
   }
   req.log.info(
     { sessionId: session.id, connectorCount: body.data.sourceConnectorIds.length },
-    "Completed demonstration research run",
+    "Completed open-source research run",
   );
   res.json(RunResearchResponse.parse(session));
 });
@@ -103,6 +117,14 @@ router.post("/analysis-sessions/:sessionId/assessment", (req, res) => {
 
 router.get("/source-connectors", (_req, res) => {
   res.json(ListSourceConnectorsResponse.parse(sourceConnectors));
+});
+
+router.get("/evaluation-vectors", (_req, res) => {
+  res.json(ListEvaluationVectorsResponse.parse(evaluationVectors));
+});
+
+router.get("/historical-ratings", (_req, res) => {
+  res.json(ListHistoricalRatingsResponse.parse(historicalRatings));
 });
 
 export default router;

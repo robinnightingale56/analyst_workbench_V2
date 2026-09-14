@@ -133,6 +133,34 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/SourceConnector"
+  /evaluation-vectors:
+    get:
+      operationId: listEvaluationVectors
+      tags: [analysis]
+      summary: List the stand-in evaluation vectors used for report grading
+      responses:
+        "200":
+          description: Evaluation vectors
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EvaluationVectorDefinition"
+  /historical-ratings:
+    get:
+      operationId: listHistoricalRatings
+      tags: [analysis]
+      summary: List prior-year ratings used for trend comparison
+      responses:
+        "200":
+          description: Historical ratings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HistoricalRating"
 components:
   parameters:
     SessionId:
@@ -197,6 +225,7 @@ components:
         - status
         - createdAt
         - sourceFiles
+        - sourceNotices
         - assessment
       properties:
         id:
@@ -217,6 +246,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SourceFile"
+        sourceNotices:
+          type: array
+          items:
+            type: string
         assessment:
           oneOf:
             - $ref: "#/components/schemas/Assessment"
@@ -235,6 +268,8 @@ components:
         - keyPoints
         - tags
         - url
+        - retrievedAt
+        - collectionMethod
       properties:
         id:
           type: string
@@ -266,9 +301,13 @@ components:
             type: string
         url:
           type: string
+        retrievedAt:
+          type: string
+        collectionMethod:
+          type: string
     SourceConnector:
       type: object
-      required: [id, name, description, status, sourceTypes]
+      required: [id, name, description, status, mode, sourceTypes]
       properties:
         id:
           type: string
@@ -279,6 +318,9 @@ components:
         status:
           type: string
           enum: [READY, NEEDS_CONFIGURATION, DISABLED]
+        mode:
+          type: string
+          enum: [LIVE, DEMONSTRATION]
         sourceTypes:
           type: array
           items:
@@ -286,7 +328,15 @@ components:
             enum: [NEWS, GOVERNMENT, ACADEMIC, SOCIAL, WEB, INTERNAL]
     Assessment:
       type: object
-      required: [id, selectedSourceFileIds, overallScore, standards, summary]
+      required:
+        - id
+        - selectedSourceFileIds
+        - overallScore
+        - standards
+        - vectorResults
+        - historicalRatings
+        - trendAnalysis
+        - summary
       properties:
         id:
           type: string
@@ -304,6 +354,16 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AnalyticStandard"
+        vectorResults:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvaluationVectorResult"
+        historicalRatings:
+          type: array
+          items:
+            $ref: "#/components/schemas/HistoricalRating"
+        trendAnalysis:
+          $ref: "#/components/schemas/TrendAnalysis"
     AnalyticStandard:
       type: object
       required: [id, name, shortName, score, status, finding, prompt]
@@ -325,4 +385,88 @@ components:
           type: string
         prompt:
           type: string
+    EvaluationVectorDefinition:
+      type: object
+      required: [id, name, description, weight, placeholder]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        weight:
+          type: number
+          minimum: 0
+          maximum: 1
+        placeholder:
+          type: boolean
+    EvaluationVectorResult:
+      type: object
+      required: [id, name, weight, score, status, rationale, evidenceSourceFileIds]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        weight:
+          type: number
+          minimum: 0
+          maximum: 1
+        score:
+          type: number
+          minimum: 0
+          maximum: 100
+        status:
+          type: string
+          enum: [STRONG, MIXED, WEAK]
+        rationale:
+          type: string
+        evidenceSourceFileIds:
+          type: array
+          items:
+            type: string
+    HistoricalRating:
+      type: object
+      required: [year, rating, score, summary]
+      properties:
+        year:
+          type: integer
+        rating:
+          type: string
+          enum: [LOW, MODERATE, HIGH, CRITICAL]
+        score:
+          type: number
+          minimum: 0
+          maximum: 100
+        summary:
+          type: string
+    TrendAnalysis:
+      type: object
+      required:
+        - direction
+        - previousRating
+        - recommendedRating
+        - confidence
+        - rationale
+        - drivers
+      properties:
+        direction:
+          type: string
+          enum: [DOWN, SAME, UP]
+        previousRating:
+          type: string
+          enum: [LOW, MODERATE, HIGH, CRITICAL]
+        recommendedRating:
+          type: string
+          enum: [LOW, MODERATE, HIGH, CRITICAL]
+        confidence:
+          type: string
+          enum: [LOW, MODERATE, HIGH]
+        rationale:
+          type: string
+        drivers:
+          type: array
+          items:
+            type: string
 

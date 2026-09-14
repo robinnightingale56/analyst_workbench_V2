@@ -71,10 +71,88 @@ const standards = [
   },
 ] as const;
 
+export const evaluationVectors = [
+  {
+    id: "vector-a",
+    name: "Operational Activity",
+    description: "Stand-in vector measuring observable activity level and change over time.",
+    weight: 0.25,
+    placeholder: true,
+  },
+  {
+    id: "vector-b",
+    name: "Demonstrated Capability",
+    description: "Stand-in vector measuring evidenced capability, capacity, and readiness.",
+    weight: 0.25,
+    placeholder: true,
+  },
+  {
+    id: "vector-c",
+    name: "Geographic Reach",
+    description: "Stand-in vector measuring the scope and distribution of observed effects.",
+    weight: 0.15,
+    placeholder: true,
+  },
+  {
+    id: "vector-d",
+    name: "Sustainment and Resilience",
+    description: "Stand-in vector measuring persistence, adaptability, and ability to sustain activity.",
+    weight: 0.2,
+    placeholder: true,
+  },
+  {
+    id: "vector-e",
+    name: "Warning Indicators",
+    description: "Stand-in vector measuring the strength and convergence of change indicators.",
+    weight: 0.15,
+    placeholder: true,
+  },
+] as const;
+
+export const historicalRatings = [
+  {
+    year: 2022,
+    rating: "LOW" as const,
+    score: 42,
+    summary: "Limited activity and uneven corroboration produced a low baseline rating.",
+  },
+  {
+    year: 2023,
+    rating: "MODERATE" as const,
+    score: 55,
+    summary: "Broader reporting and improved capability indicators supported an increase.",
+  },
+  {
+    year: 2024,
+    rating: "MODERATE" as const,
+    score: 59,
+    summary: "The rating remained moderate as growth indicators were offset by sustainment gaps.",
+  },
+  {
+    year: 2025,
+    rating: "MODERATE" as const,
+    score: 63,
+    summary: "Several indicators strengthened, but evidence did not support the next rating band.",
+  },
+];
+
 function result(score: number): StandardStatus {
   if (score >= 80) return "PASS";
   if (score >= 60) return "REVIEW";
   return "GAP";
+}
+
+function vectorStatus(score: number) {
+  if (score >= 75) return "STRONG" as const;
+  if (score >= 55) return "MIXED" as const;
+  return "WEAK" as const;
+}
+
+function ratingForScore(score: number) {
+  if (score >= 85) return "CRITICAL" as const;
+  if (score >= 70) return "HIGH" as const;
+  if (score >= 45) return "MODERATE" as const;
+  return "LOW" as const;
 }
 
 export function assessSources(selected: SourceFile[]) {
@@ -130,6 +208,63 @@ export function assessSources(selected: SourceFile[]) {
     evaluated.reduce((total, standard) => total + standard.score, 0) /
       evaluated.length,
   );
+  const vectorScores = [
+    Math.min(94, 45 + sourceCount * 7 + sourceTypes * 3),
+    Math.min(96, 42 + highReliability * 14 + Math.round(avgRelevance * 18)),
+    Math.min(90, 38 + sourceTypes * 13),
+    Math.min(88, 44 + highReliability * 9 + sourceCount * 4),
+    Math.min(93, 40 + sourceTypes * 8 + Math.round(avgRelevance * 20)),
+  ];
+  const vectorResults = evaluationVectors.map((vector, index) => {
+    const score = vectorScores[index] ?? 0;
+    return {
+      id: vector.id,
+      name: vector.name,
+      weight: vector.weight,
+      score,
+      status: vectorStatus(score),
+      rationale:
+        score >= 75
+          ? `Multiple selected reports provide converging support for ${vector.name.toLowerCase()}.`
+          : score >= 55
+            ? `Reporting provides partial support for ${vector.name.toLowerCase()}, with important corroboration or coverage gaps.`
+            : `The selected evidence is insufficient to make a strong judgment about ${vector.name.toLowerCase()}.`,
+      evidenceSourceFileIds: selected
+        .filter((_, sourceIndex) => sourceIndex % evaluationVectors.length <= index)
+        .slice(0, 3)
+        .map((item) => item.id),
+    };
+  });
+  const currentScore = Math.round(
+    vectorResults.reduce((total, vector) => total + vector.score * vector.weight, 0),
+  );
+  const previous = historicalRatings[historicalRatings.length - 1]!;
+  const delta = currentScore - previous.score;
+  const direction = delta >= 6 ? ("UP" as const) : delta <= -6 ? ("DOWN" as const) : ("SAME" as const);
+  const recommendedRating = ratingForScore(currentScore);
+  const evidenceConfidence =
+    sourceCount >= 4 && highReliability >= 2 && sourceTypes >= 3
+      ? ("HIGH" as const)
+      : sourceCount >= 2 && highReliability >= 1
+        ? ("MODERATE" as const)
+        : ("LOW" as const);
+  const strongest = [...vectorResults].sort((a, b) => b.score - a.score)[0]!;
+  const weakest = [...vectorResults].sort((a, b) => a.score - b.score)[0]!;
+  const directionLanguage =
+    direction === "UP" ? "increase" : direction === "DOWN" ? "decrease" : "maintain";
+  const trendAnalysis = {
+    direction,
+    previousRating: previous.rating,
+    recommendedRating,
+    confidence: evidenceConfidence,
+    rationale: `The weighted stand-in-vector score is ${currentScore}, compared with ${previous.score} in ${previous.year}. This supports a recommendation to ${directionLanguage} the rating. ${strongest.name} is the strongest upward driver, while ${weakest.name} remains the principal limiting factor.`,
+    drivers: [
+      `${strongest.name}: ${strongest.score}/100 — strongest evidenced condition.`,
+      `${weakest.name}: ${weakest.score}/100 — primary uncertainty or collection gap.`,
+      `${highReliability} of ${sourceCount} selected reports are rated high reliability.`,
+      `${sourceTypes} distinct source classes contribute to the current assessment.`,
+    ],
+  };
 
   return {
     id: crypto.randomUUID(),
@@ -140,5 +275,8 @@ export function assessSources(selected: SourceFile[]) {
         ? "The evidence package is broadly defensible, with focused revisions needed before dissemination."
         : "The evidence package is suitable for continued analysis but contains tradecraft gaps that should be resolved before dissemination.",
     standards: evaluated,
+    vectorResults,
+    historicalRatings,
+    trendAnalysis,
   };
 }

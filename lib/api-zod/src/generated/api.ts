@@ -29,6 +29,15 @@ export const listAnalysisSessionsResponseAssessmentOneOverallScoreMax = 100;
 export const listAnalysisSessionsResponseAssessmentOneStandardsItemScoreMin = 0;
 export const listAnalysisSessionsResponseAssessmentOneStandardsItemScoreMax = 100;
 
+export const listAnalysisSessionsResponseAssessmentOneVectorResultsItemWeightMin = 0;
+export const listAnalysisSessionsResponseAssessmentOneVectorResultsItemWeightMax = 1;
+
+export const listAnalysisSessionsResponseAssessmentOneVectorResultsItemScoreMin = 0;
+export const listAnalysisSessionsResponseAssessmentOneVectorResultsItemScoreMax = 100;
+
+export const listAnalysisSessionsResponseAssessmentOneHistoricalRatingsItemScoreMin = 0;
+export const listAnalysisSessionsResponseAssessmentOneHistoricalRatingsItemScoreMax = 100;
+
 
 
 export const ListAnalysisSessionsResponseItem = zod.object({
@@ -49,8 +58,11 @@ export const ListAnalysisSessionsResponseItem = zod.object({
   "bluf": zod.string(),
   "keyPoints": zod.array(zod.string()),
   "tags": zod.array(zod.string()),
-  "url": zod.string()
+  "url": zod.string(),
+  "retrievedAt": zod.string(),
+  "collectionMethod": zod.string()
 })),
+  "sourceNotices": zod.array(zod.string()),
   "assessment": zod.union([zod.object({
   "id": zod.string(),
   "selectedSourceFileIds": zod.array(zod.string()),
@@ -64,7 +76,30 @@ export const ListAnalysisSessionsResponseItem = zod.object({
   "status": zod.enum(['PASS', 'REVIEW', 'GAP']),
   "finding": zod.string(),
   "prompt": zod.string()
-}))
+})),
+  "vectorResults": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "weight": zod.number().min(listAnalysisSessionsResponseAssessmentOneVectorResultsItemWeightMin).max(listAnalysisSessionsResponseAssessmentOneVectorResultsItemWeightMax),
+  "score": zod.number().min(listAnalysisSessionsResponseAssessmentOneVectorResultsItemScoreMin).max(listAnalysisSessionsResponseAssessmentOneVectorResultsItemScoreMax),
+  "status": zod.enum(['STRONG', 'MIXED', 'WEAK']),
+  "rationale": zod.string(),
+  "evidenceSourceFileIds": zod.array(zod.string())
+})),
+  "historicalRatings": zod.array(zod.object({
+  "year": zod.number().int(),
+  "rating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
+  "score": zod.number().min(listAnalysisSessionsResponseAssessmentOneHistoricalRatingsItemScoreMin).max(listAnalysisSessionsResponseAssessmentOneHistoricalRatingsItemScoreMax),
+  "summary": zod.string()
+})),
+  "trendAnalysis": zod.object({
+  "direction": zod.enum(['DOWN', 'SAME', 'UP']),
+  "previousRating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
+  "recommendedRating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
+  "confidence": zod.enum(['LOW', 'MODERATE', 'HIGH']),
+  "rationale": zod.string(),
+  "drivers": zod.array(zod.string())
+})
 }),zod.null()])
 })
 export const ListAnalysisSessionsResponse = zod.array(ListAnalysisSessionsResponseItem)
@@ -92,6 +127,15 @@ export const createAnalysisSessionResponseAssessmentOneOverallScoreMax = 100;
 export const createAnalysisSessionResponseAssessmentOneStandardsItemScoreMin = 0;
 export const createAnalysisSessionResponseAssessmentOneStandardsItemScoreMax = 100;
 
+export const createAnalysisSessionResponseAssessmentOneVectorResultsItemWeightMin = 0;
+export const createAnalysisSessionResponseAssessmentOneVectorResultsItemWeightMax = 1;
+
+export const createAnalysisSessionResponseAssessmentOneVectorResultsItemScoreMin = 0;
+export const createAnalysisSessionResponseAssessmentOneVectorResultsItemScoreMax = 100;
+
+export const createAnalysisSessionResponseAssessmentOneHistoricalRatingsItemScoreMin = 0;
+export const createAnalysisSessionResponseAssessmentOneHistoricalRatingsItemScoreMax = 100;
+
 
 
 export const CreateAnalysisSessionResponse = zod.object({
@@ -112,8 +156,11 @@ export const CreateAnalysisSessionResponse = zod.object({
   "bluf": zod.string(),
   "keyPoints": zod.array(zod.string()),
   "tags": zod.array(zod.string()),
-  "url": zod.string()
+  "url": zod.string(),
+  "retrievedAt": zod.string(),
+  "collectionMethod": zod.string()
 })),
+  "sourceNotices": zod.array(zod.string()),
   "assessment": zod.union([zod.object({
   "id": zod.string(),
   "selectedSourceFileIds": zod.array(zod.string()),
@@ -127,7 +174,30 @@ export const CreateAnalysisSessionResponse = zod.object({
   "status": zod.enum(['PASS', 'REVIEW', 'GAP']),
   "finding": zod.string(),
   "prompt": zod.string()
-}))
+})),
+  "vectorResults": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "weight": zod.number().min(createAnalysisSessionResponseAssessmentOneVectorResultsItemWeightMin).max(createAnalysisSessionResponseAssessmentOneVectorResultsItemWeightMax),
+  "score": zod.number().min(createAnalysisSessionResponseAssessmentOneVectorResultsItemScoreMin).max(createAnalysisSessionResponseAssessmentOneVectorResultsItemScoreMax),
+  "status": zod.enum(['STRONG', 'MIXED', 'WEAK']),
+  "rationale": zod.string(),
+  "evidenceSourceFileIds": zod.array(zod.string())
+})),
+  "historicalRatings": zod.array(zod.object({
+  "year": zod.number().int(),
+  "rating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
+  "score": zod.number().min(createAnalysisSessionResponseAssessmentOneHistoricalRatingsItemScoreMin).max(createAnalysisSessionResponseAssessmentOneHistoricalRatingsItemScoreMax),
+  "summary": zod.string()
+})),
+  "trendAnalysis": zod.object({
+  "direction": zod.enum(['DOWN', 'SAME', 'UP']),
+  "previousRating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
+  "recommendedRating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
+  "confidence": zod.enum(['LOW', 'MODERATE', 'HIGH']),
+  "rationale": zod.string(),
+  "drivers": zod.array(zod.string())
+})
 }),zod.null()])
 })
 
@@ -147,6 +217,15 @@ export const getAnalysisSessionResponseAssessmentOneOverallScoreMax = 100;
 
 export const getAnalysisSessionResponseAssessmentOneStandardsItemScoreMin = 0;
 export const getAnalysisSessionResponseAssessmentOneStandardsItemScoreMax = 100;
+
+export const getAnalysisSessionResponseAssessmentOneVectorResultsItemWeightMin = 0;
+export const getAnalysisSessionResponseAssessmentOneVectorResultsItemWeightMax = 1;
+
+export const getAnalysisSessionResponseAssessmentOneVectorResultsItemScoreMin = 0;
+export const getAnalysisSessionResponseAssessmentOneVectorResultsItemScoreMax = 100;
+
+export const getAnalysisSessionResponseAssessmentOneHistoricalRatingsItemScoreMin = 0;
+export const getAnalysisSessionResponseAssessmentOneHistoricalRatingsItemScoreMax = 100;
 
 
 
@@ -168,8 +247,11 @@ export const GetAnalysisSessionResponse = zod.object({
   "bluf": zod.string(),
   "keyPoints": zod.array(zod.string()),
   "tags": zod.array(zod.string()),
-  "url": zod.string()
+  "url": zod.string(),
+  "retrievedAt": zod.string(),
+  "collectionMethod": zod.string()
 })),
+  "sourceNotices": zod.array(zod.string()),
   "assessment": zod.union([zod.object({
   "id": zod.string(),
   "selectedSourceFileIds": zod.array(zod.string()),
@@ -183,7 +265,30 @@ export const GetAnalysisSessionResponse = zod.object({
   "status": zod.enum(['PASS', 'REVIEW', 'GAP']),
   "finding": zod.string(),
   "prompt": zod.string()
-}))
+})),
+  "vectorResults": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "weight": zod.number().min(getAnalysisSessionResponseAssessmentOneVectorResultsItemWeightMin).max(getAnalysisSessionResponseAssessmentOneVectorResultsItemWeightMax),
+  "score": zod.number().min(getAnalysisSessionResponseAssessmentOneVectorResultsItemScoreMin).max(getAnalysisSessionResponseAssessmentOneVectorResultsItemScoreMax),
+  "status": zod.enum(['STRONG', 'MIXED', 'WEAK']),
+  "rationale": zod.string(),
+  "evidenceSourceFileIds": zod.array(zod.string())
+})),
+  "historicalRatings": zod.array(zod.object({
+  "year": zod.number().int(),
+  "rating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
+  "score": zod.number().min(getAnalysisSessionResponseAssessmentOneHistoricalRatingsItemScoreMin).max(getAnalysisSessionResponseAssessmentOneHistoricalRatingsItemScoreMax),
+  "summary": zod.string()
+})),
+  "trendAnalysis": zod.object({
+  "direction": zod.enum(['DOWN', 'SAME', 'UP']),
+  "previousRating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
+  "recommendedRating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
+  "confidence": zod.enum(['LOW', 'MODERATE', 'HIGH']),
+  "rationale": zod.string(),
+  "drivers": zod.array(zod.string())
+})
 }),zod.null()])
 })
 
@@ -213,6 +318,15 @@ export const runResearchResponseAssessmentOneOverallScoreMax = 100;
 export const runResearchResponseAssessmentOneStandardsItemScoreMin = 0;
 export const runResearchResponseAssessmentOneStandardsItemScoreMax = 100;
 
+export const runResearchResponseAssessmentOneVectorResultsItemWeightMin = 0;
+export const runResearchResponseAssessmentOneVectorResultsItemWeightMax = 1;
+
+export const runResearchResponseAssessmentOneVectorResultsItemScoreMin = 0;
+export const runResearchResponseAssessmentOneVectorResultsItemScoreMax = 100;
+
+export const runResearchResponseAssessmentOneHistoricalRatingsItemScoreMin = 0;
+export const runResearchResponseAssessmentOneHistoricalRatingsItemScoreMax = 100;
+
 
 
 export const RunResearchResponse = zod.object({
@@ -233,8 +347,11 @@ export const RunResearchResponse = zod.object({
   "bluf": zod.string(),
   "keyPoints": zod.array(zod.string()),
   "tags": zod.array(zod.string()),
-  "url": zod.string()
+  "url": zod.string(),
+  "retrievedAt": zod.string(),
+  "collectionMethod": zod.string()
 })),
+  "sourceNotices": zod.array(zod.string()),
   "assessment": zod.union([zod.object({
   "id": zod.string(),
   "selectedSourceFileIds": zod.array(zod.string()),
@@ -248,7 +365,30 @@ export const RunResearchResponse = zod.object({
   "status": zod.enum(['PASS', 'REVIEW', 'GAP']),
   "finding": zod.string(),
   "prompt": zod.string()
-}))
+})),
+  "vectorResults": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "weight": zod.number().min(runResearchResponseAssessmentOneVectorResultsItemWeightMin).max(runResearchResponseAssessmentOneVectorResultsItemWeightMax),
+  "score": zod.number().min(runResearchResponseAssessmentOneVectorResultsItemScoreMin).max(runResearchResponseAssessmentOneVectorResultsItemScoreMax),
+  "status": zod.enum(['STRONG', 'MIXED', 'WEAK']),
+  "rationale": zod.string(),
+  "evidenceSourceFileIds": zod.array(zod.string())
+})),
+  "historicalRatings": zod.array(zod.object({
+  "year": zod.number().int(),
+  "rating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
+  "score": zod.number().min(runResearchResponseAssessmentOneHistoricalRatingsItemScoreMin).max(runResearchResponseAssessmentOneHistoricalRatingsItemScoreMax),
+  "summary": zod.string()
+})),
+  "trendAnalysis": zod.object({
+  "direction": zod.enum(['DOWN', 'SAME', 'UP']),
+  "previousRating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
+  "recommendedRating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
+  "confidence": zod.enum(['LOW', 'MODERATE', 'HIGH']),
+  "rationale": zod.string(),
+  "drivers": zod.array(zod.string())
+})
 }),zod.null()])
 })
 
@@ -273,6 +413,15 @@ export const createAssessmentResponseAssessmentOneOverallScoreMax = 100;
 export const createAssessmentResponseAssessmentOneStandardsItemScoreMin = 0;
 export const createAssessmentResponseAssessmentOneStandardsItemScoreMax = 100;
 
+export const createAssessmentResponseAssessmentOneVectorResultsItemWeightMin = 0;
+export const createAssessmentResponseAssessmentOneVectorResultsItemWeightMax = 1;
+
+export const createAssessmentResponseAssessmentOneVectorResultsItemScoreMin = 0;
+export const createAssessmentResponseAssessmentOneVectorResultsItemScoreMax = 100;
+
+export const createAssessmentResponseAssessmentOneHistoricalRatingsItemScoreMin = 0;
+export const createAssessmentResponseAssessmentOneHistoricalRatingsItemScoreMax = 100;
+
 
 
 export const CreateAssessmentResponse = zod.object({
@@ -293,8 +442,11 @@ export const CreateAssessmentResponse = zod.object({
   "bluf": zod.string(),
   "keyPoints": zod.array(zod.string()),
   "tags": zod.array(zod.string()),
-  "url": zod.string()
+  "url": zod.string(),
+  "retrievedAt": zod.string(),
+  "collectionMethod": zod.string()
 })),
+  "sourceNotices": zod.array(zod.string()),
   "assessment": zod.union([zod.object({
   "id": zod.string(),
   "selectedSourceFileIds": zod.array(zod.string()),
@@ -308,7 +460,30 @@ export const CreateAssessmentResponse = zod.object({
   "status": zod.enum(['PASS', 'REVIEW', 'GAP']),
   "finding": zod.string(),
   "prompt": zod.string()
-}))
+})),
+  "vectorResults": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "weight": zod.number().min(createAssessmentResponseAssessmentOneVectorResultsItemWeightMin).max(createAssessmentResponseAssessmentOneVectorResultsItemWeightMax),
+  "score": zod.number().min(createAssessmentResponseAssessmentOneVectorResultsItemScoreMin).max(createAssessmentResponseAssessmentOneVectorResultsItemScoreMax),
+  "status": zod.enum(['STRONG', 'MIXED', 'WEAK']),
+  "rationale": zod.string(),
+  "evidenceSourceFileIds": zod.array(zod.string())
+})),
+  "historicalRatings": zod.array(zod.object({
+  "year": zod.number().int(),
+  "rating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
+  "score": zod.number().min(createAssessmentResponseAssessmentOneHistoricalRatingsItemScoreMin).max(createAssessmentResponseAssessmentOneHistoricalRatingsItemScoreMax),
+  "summary": zod.string()
+})),
+  "trendAnalysis": zod.object({
+  "direction": zod.enum(['DOWN', 'SAME', 'UP']),
+  "previousRating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
+  "recommendedRating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
+  "confidence": zod.enum(['LOW', 'MODERATE', 'HIGH']),
+  "rationale": zod.string(),
+  "drivers": zod.array(zod.string())
+})
 }),zod.null()])
 })
 
@@ -321,8 +496,44 @@ export const ListSourceConnectorsResponseItem = zod.object({
   "name": zod.string(),
   "description": zod.string(),
   "status": zod.enum(['READY', 'NEEDS_CONFIGURATION', 'DISABLED']),
+  "mode": zod.enum(['LIVE', 'DEMONSTRATION']),
   "sourceTypes": zod.array(zod.enum(['NEWS', 'GOVERNMENT', 'ACADEMIC', 'SOCIAL', 'WEB', 'INTERNAL']))
 })
 export const ListSourceConnectorsResponse = zod.array(ListSourceConnectorsResponseItem)
+
+
+/**
+ * @summary List the stand-in evaluation vectors used for report grading
+ */
+export const listEvaluationVectorsResponseWeightMin = 0;
+export const listEvaluationVectorsResponseWeightMax = 1;
+
+
+
+export const ListEvaluationVectorsResponseItem = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "weight": zod.number().min(listEvaluationVectorsResponseWeightMin).max(listEvaluationVectorsResponseWeightMax),
+  "placeholder": zod.boolean()
+})
+export const ListEvaluationVectorsResponse = zod.array(ListEvaluationVectorsResponseItem)
+
+
+/**
+ * @summary List prior-year ratings used for trend comparison
+ */
+export const listHistoricalRatingsResponseScoreMin = 0;
+export const listHistoricalRatingsResponseScoreMax = 100;
+
+
+
+export const ListHistoricalRatingsResponseItem = zod.object({
+  "year": zod.number().int(),
+  "rating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
+  "score": zod.number().min(listHistoricalRatingsResponseScoreMin).max(listHistoricalRatingsResponseScoreMax),
+  "summary": zod.string()
+})
+export const ListHistoricalRatingsResponse = zod.array(ListHistoricalRatingsResponseItem)
 
 

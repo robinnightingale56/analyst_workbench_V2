@@ -1,100 +1,328 @@
+export type SourceFile = {
+  id: string;
+  title: string;
+  source: string;
+  sourceType: "NEWS" | "GOVERNMENT" | "ACADEMIC" | "SOCIAL" | "WEB" | "INTERNAL";
+  publishedAt: string;
+  relevance: number;
+  reliability: "HIGH" | "MODERATE" | "LOW" | "UNKNOWN";
+  bluf: string;
+  keyPoints: string[];
+  tags: string[];
+  url: string;
+  retrievedAt: string;
+  collectionMethod: string;
+};
+
 export const sourceConnectors = [
   {
-    id: "demo-government",
-    name: "Government Reporting",
-    description: "Demonstration adapter for official releases and public government reporting.",
+    id: "google-news-rss",
+    name: "Google News",
+    description: "Live news and article discovery through the public Google News RSS feed.",
     status: "READY",
-    sourceTypes: ["GOVERNMENT"],
-  },
-  {
-    id: "demo-open-web",
-    name: "Open Web Search",
-    description: "Demonstration adapter. Configure an approved web-search provider for live retrieval.",
-    status: "NEEDS_CONFIGURATION",
+    mode: "LIVE",
     sourceTypes: ["NEWS", "WEB"],
   },
   {
-    id: "demo-academic",
-    name: "Academic Research",
-    description: "Demonstration adapter for journals, research institutes, and technical publications.",
+    id: "federal-register",
+    name: "Federal Register",
+    description: "Live U.S. rules, notices, presidential documents, and official publications.",
     status: "READY",
+    mode: "LIVE",
+    sourceTypes: ["GOVERNMENT"],
+  },
+  {
+    id: "crossref",
+    name: "Crossref Research",
+    description: "Live scholarly publication metadata from the public Crossref API.",
+    status: "READY",
+    mode: "LIVE",
     sourceTypes: ["ACADEMIC"],
   },
+  {
+    id: "demonstration-library",
+    name: "Demonstration Library",
+    description: "Synthetic records for training and interface demonstrations only.",
+    status: "READY",
+    mode: "DEMONSTRATION",
+    sourceTypes: ["GOVERNMENT", "NEWS", "ACADEMIC", "WEB"],
+  },
 ] as const;
+
+type AdapterResult = {
+  files: SourceFile[];
+  notices: string[];
+};
+
+function cleanText(value: string | undefined, fallback: string) {
+  const text = (value ?? "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+  return (text || fallback).slice(0, 700);
+}
+
+function promptTags(prompt: string) {
+  return prompt
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length > 4)
+    .slice(0, 4);
+}
+
+async function fetchJson<T>(url: URL): Promise<T> {
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/json",
+      "User-Agent": "AnalystWorkbenchProofOfConcept/0.1",
+    },
+    signal: AbortSignal.timeout(12_000),
+  });
+  if (!response.ok) {
+    throw new Error(`provider returned ${response.status}`);
+  }
+  return (await response.json()) as T;
+}
+
+async function fetchText(url: URL): Promise<string> {
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/rss+xml, application/xml, text/xml",
+      "User-Agent": "AnalystWorkbenchProofOfConcept/0.1",
+    },
+    signal: AbortSignal.timeout(12_000),
+  });
+  if (!response.ok) {
+    throw new Error(`provider returned ${response.status}`);
+  }
+  return response.text();
+}
+
+function rssValue(item: string, tag: string) {
+  const match = item.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`, "i"));
+  return cleanText(match?.[1]?.replace(/<!\[CDATA\[|\]\]>/g, ""), "");
+}
+
+async function searchGoogleNews(prompt: string, limit: number): Promise<SourceFile[]> {
+  const url = new URL("https://news.google.com/rss/search");
+  url.searchParams.set("q", prompt);
+  url.searchParams.set("hl", "en-US");
+  url.searchParams.set("gl", "US");
+  url.searchParams.set("ceid", "US:en");
+  const xml = await fetchText(url);
+  const retrievedAt = new Date().toISOString();
+  const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)]
+    .slice(0, Math.min(limit, 25))
+    .map((match) => match[1] ?? "");
+  return items.map((item, index) => {
+    const rawTitle = rssValue(item, "title") || "Untitled news report";
+    const source = rssValue(item, "source") || rawTitle.split(" - ").at(-1) || "News source";
+    const title = rawTitle.endsWith(` - ${source}`)
+      ? rawTitle.slice(0, -(` - ${source}`.length))
+      : rawTitle;
+    const publishedAt = rssValue(item, "pubDate");
+    return {
+      id: crypto.randomUUID(),
+      title,
+      source,
+      sourceType: "NEWS",
+      publishedAt: publishedAt && !Number.isNaN(Date.parse(publishedAt))
+        ? new Date(publishedAt).toISOString()
+        : retrievedAt,
+      relevance: Math.max(0.55, 0.95 - index * 0.035),
+      reliability: "UNKNOWN",
+      bluf: `${title}. This is a live discovery result; source credibility and the full article must be reviewed before use.`,
+      keyPoints: [
+        `Published by ${source} and discovered through Google News.`,
+        "The feed supplies article metadata rather than a validated intelligence judgment.",
+        "Review the linked article for sourcing, context, and possible bias.",
+      ],
+      tags: [...promptTags(prompt), "live", "news"],
+      url: rssValue(item, "link") || "https://news.google.com/",
+      retrievedAt,
+      collectionMethod: "Google News public RSS",
+    } satisfies SourceFile;
+  });
+}
+
+async function searchFederalRegister(prompt: string, limit: number): Promise<SourceFile[]> {
+  const url = new URL("https://www.federalregister.gov/api/v1/documents.json");
+  url.searchParams.set("per_page", String(Math.min(limit, 20)));
+  url.searchParams.set("order", "relevance");
+  url.searchParams.set("conditions[term]", prompt);
+  const payload = await fetchJson<{
+    results?: Array<{
+      title?: string;
+      abstract?: string;
+      html_url?: string;
+      publication_date?: string;
+      type?: string;
+      agencies?: Array<{ name?: string }>;
+    }>;
+  }>(url);
+  const retrievedAt = new Date().toISOString();
+  return (payload.results ?? []).map((document, index) => {
+    const title = cleanText(document.title, "Untitled Federal Register document");
+    const agencyNames = (document.agencies ?? [])
+      .map((agency) => agency.name)
+      .filter(Boolean)
+      .join(", ");
+    return {
+      id: crypto.randomUUID(),
+      title,
+      source: agencyNames || "Federal Register",
+      sourceType: "GOVERNMENT",
+      publishedAt: document.publication_date
+        ? new Date(`${document.publication_date}T12:00:00Z`).toISOString()
+        : retrievedAt,
+      relevance: Math.max(0.58, 0.96 - index * 0.04),
+      reliability: "HIGH",
+      bluf: cleanText(
+        document.abstract,
+        `${title}. Review the official document for scope, authorities, dates, and implications.`,
+      ),
+      keyPoints: [
+        `Document type: ${document.type || "official publication"}.`,
+        `Publishing organization: ${agencyNames || "not provided"}.`,
+        "Primary-source authority is high; analytic relevance still requires review.",
+      ],
+      tags: [...promptTags(prompt), "live", "official"],
+      url: document.html_url || "https://www.federalregister.gov/",
+      retrievedAt,
+      collectionMethod: "Federal Register public API",
+    } satisfies SourceFile;
+  });
+}
+
+async function searchCrossref(prompt: string, limit: number): Promise<SourceFile[]> {
+  const url = new URL("https://api.crossref.org/works");
+  url.searchParams.set("query", prompt);
+  url.searchParams.set("rows", String(Math.min(limit, 20)));
+  url.searchParams.set("sort", "relevance");
+  const payload = await fetchJson<{
+    message?: {
+      items?: Array<{
+        title?: string[];
+        abstract?: string;
+        URL?: string;
+        publisher?: string;
+        type?: string;
+        DOI?: string;
+        issued?: { "date-parts"?: number[][] };
+      }>;
+    };
+  }>(url);
+  const retrievedAt = new Date().toISOString();
+  return (payload.message?.items ?? []).map((work, index) => {
+    const title = cleanText(work.title?.[0], "Untitled research publication");
+    const dateParts = work.issued?.["date-parts"]?.[0] ?? [];
+    const year = dateParts[0] ?? new Date().getUTCFullYear();
+    const month = Math.max(1, Math.min(12, dateParts[1] ?? 1));
+    const day = Math.max(1, Math.min(28, dateParts[2] ?? 1));
+    return {
+      id: crypto.randomUUID(),
+      title,
+      source: work.publisher || "Crossref indexed publisher",
+      sourceType: "ACADEMIC",
+      publishedAt: new Date(Date.UTC(year, month - 1, day, 12)).toISOString(),
+      relevance: Math.max(0.55, 0.94 - index * 0.035),
+      reliability: "MODERATE",
+      bluf: cleanText(
+        work.abstract,
+        `${title}. Crossref provides publication metadata; methodology and findings require review at the linked source.`,
+      ),
+      keyPoints: [
+        `Publication type: ${work.type || "not provided"}.`,
+        `Publisher: ${work.publisher || "not provided"}.`,
+        `DOI: ${work.DOI || "not provided"}.`,
+      ],
+      tags: [...promptTags(prompt), "live", "research"],
+      url: work.URL || "https://www.crossref.org/",
+      retrievedAt,
+      collectionMethod: "Crossref public REST API",
+    } satisfies SourceFile;
+  });
+}
 
 const templates = [
   {
-    title: "Official update identifies a shift in operating conditions",
-    source: "Government Reporting Demo",
+    title: "Training record: official update identifies a change",
+    source: "Demonstration Library",
     sourceType: "GOVERNMENT" as const,
-    relevance: 0.94,
     reliability: "HIGH" as const,
-    bluf: "Official reporting indicates a measurable change in the operating environment, but the release does not establish intent or long-term trajectory.",
-    keyPoints: [
-      "The reported change is corroborated by two observable indicators.",
-      "The source has direct access but may emphasize policy-consistent framing.",
-      "Follow-on reporting is required to determine whether the shift is temporary.",
-    ],
-    tags: ["official reporting", "indicators", "intent gap"],
+    bluf: "Synthetic training reporting indicates a measurable change, but does not establish intent or long-term trajectory.",
   },
   {
-    title: "Independent reporting highlights second-order implications",
-    source: "Open Web Demo",
+    title: "Training record: independent reporting adds context",
+    source: "Demonstration Library",
     sourceType: "NEWS" as const,
-    relevance: 0.87,
     reliability: "MODERATE" as const,
-    bluf: "Independent reporting broadly aligns with the official account while identifying economic and regional effects not addressed in the primary release.",
-    keyPoints: [
-      "Key factual claims align with public primary-source material.",
-      "Several impact claims rely on unnamed sources.",
-      "The report offers useful regional context but limited technical detail.",
-    ],
-    tags: ["corroboration", "regional effects", "unnamed sources"],
-  },
-  {
-    title: "Research review provides historical baseline and alternatives",
-    source: "Academic Research Demo",
-    sourceType: "ACADEMIC" as const,
-    relevance: 0.82,
-    reliability: "HIGH" as const,
-    bluf: "Historical comparison suggests the observed pattern has multiple plausible explanations and should not be treated as a single-indicator warning.",
-    keyPoints: [
-      "The study defines a useful historical baseline.",
-      "Methodology and assumptions are transparent.",
-      "The dataset predates the latest reporting period.",
-    ],
-    tags: ["baseline", "alternative hypotheses", "methodology"],
-  },
-  {
-    title: "Specialist commentary reports conflicting early indicators",
-    source: "Open Web Demo",
-    sourceType: "WEB" as const,
-    relevance: 0.71,
-    reliability: "LOW" as const,
-    bluf: "Specialist commentary identifies a possible conflicting indicator, but source access and collection methodology are unclear.",
-    keyPoints: [
-      "The claim is relevant but currently uncorroborated.",
-      "Source identity and access are not disclosed.",
-      "The indicator should be retained as a collection requirement, not a judgment driver.",
-    ],
-    tags: ["conflicting indicator", "low confidence", "collection gap"],
+    bluf: "Synthetic independent reporting broadly aligns with the training scenario while adding second-order implications.",
   },
 ] as const;
 
-export function generateDemonstrationFiles(prompt: string, maxResults = 8) {
-  const promptTag = prompt
-    .split(/\s+/)
-    .filter((word) => word.length > 5)
-    .slice(0, 2)
-    .join(" ")
-    .toLowerCase();
-
+export function generateDemonstrationFiles(prompt: string, maxResults = 4): SourceFile[] {
+  const retrievedAt = new Date().toISOString();
   return templates.slice(0, Math.min(maxResults, templates.length)).map((item, index) => ({
     id: crypto.randomUUID(),
     ...item,
     publishedAt: new Date(Date.now() - index * 86_400_000).toISOString(),
-    keyPoints: [...item.keyPoints],
-    tags: promptTag ? [...item.tags, promptTag] : [...item.tags],
+    relevance: 0.82 - index * 0.08,
+    keyPoints: [
+      "This record is synthetic and must not be cited as live reporting.",
+      "Use it only to exercise selection and assessment workflows.",
+    ],
+    tags: [...promptTags(prompt), "demonstration"],
     url: `about:blank#demonstration-source-${index + 1}`,
+    retrievedAt,
+    collectionMethod: "Synthetic demonstration library",
   }));
+}
+
+export async function runOpenSourceResearch(
+  prompt: string,
+  connectorIds: string[],
+  maxResults = 12,
+): Promise<AdapterResult> {
+  const selected = new Set(connectorIds);
+  const liveAdapters = [
+    { id: "google-news-rss", name: "Google News", run: searchGoogleNews },
+    { id: "federal-register", name: "Federal Register", run: searchFederalRegister },
+    { id: "crossref", name: "Crossref Research", run: searchCrossref },
+  ].filter((adapter) => selected.has(adapter.id));
+  const perProvider = Math.max(2, Math.ceil(maxResults / Math.max(1, liveAdapters.length)));
+  const settled = await Promise.allSettled(
+    liveAdapters.map((adapter) => adapter.run(prompt, perProvider)),
+  );
+  const files: SourceFile[] = [];
+  const notices: string[] = [];
+
+  settled.forEach((outcome, index) => {
+    const adapter = liveAdapters[index]!;
+    if (outcome.status === "fulfilled") {
+      files.push(...outcome.value);
+      if (outcome.value.length === 0) {
+        notices.push(`${adapter.name} returned no matching results.`);
+      }
+    } else {
+      const message =
+        outcome.reason instanceof Error ? outcome.reason.message : "unknown provider error";
+      notices.push(`${adapter.name} was unavailable: ${message}.`);
+    }
+  });
+
+  if (selected.has("demonstration-library")) {
+    files.push(...generateDemonstrationFiles(prompt, perProvider));
+    notices.push("Demonstration Library results are synthetic and are labeled in each record.");
+  }
+
+  return {
+    files: files
+      .sort((a, b) => b.relevance - a.relevance)
+      .slice(0, Math.min(maxResults, 20)),
+    notices,
+  };
 }

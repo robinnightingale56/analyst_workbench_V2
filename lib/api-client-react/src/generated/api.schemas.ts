@@ -102,6 +102,8 @@ export interface SourceFile {
   keyPoints: string[];
   tags: string[];
   url: string;
+  retrievedAt: string;
+  collectionMethod: string;
 }
 
 export type AnalyticStandardStatus = typeof AnalyticStandardStatus[keyof typeof AnalyticStandardStatus];
@@ -127,6 +129,101 @@ export interface AnalyticStandard {
   prompt: string;
 }
 
+export type EvaluationVectorResultStatus = typeof EvaluationVectorResultStatus[keyof typeof EvaluationVectorResultStatus];
+
+
+export const EvaluationVectorResultStatus = {
+  STRONG: 'STRONG',
+  MIXED: 'MIXED',
+  WEAK: 'WEAK',
+} as const;
+
+export interface EvaluationVectorResult {
+  id: string;
+  name: string;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  weight: number;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  score: number;
+  status: EvaluationVectorResultStatus;
+  rationale: string;
+  evidenceSourceFileIds: string[];
+}
+
+export type HistoricalRatingRating = typeof HistoricalRatingRating[keyof typeof HistoricalRatingRating];
+
+
+export const HistoricalRatingRating = {
+  LOW: 'LOW',
+  MODERATE: 'MODERATE',
+  HIGH: 'HIGH',
+  CRITICAL: 'CRITICAL',
+} as const;
+
+export interface HistoricalRating {
+  year: number;
+  rating: HistoricalRatingRating;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  score: number;
+  summary: string;
+}
+
+export type TrendAnalysisDirection = typeof TrendAnalysisDirection[keyof typeof TrendAnalysisDirection];
+
+
+export const TrendAnalysisDirection = {
+  DOWN: 'DOWN',
+  SAME: 'SAME',
+  UP: 'UP',
+} as const;
+
+export type TrendAnalysisPreviousRating = typeof TrendAnalysisPreviousRating[keyof typeof TrendAnalysisPreviousRating];
+
+
+export const TrendAnalysisPreviousRating = {
+  LOW: 'LOW',
+  MODERATE: 'MODERATE',
+  HIGH: 'HIGH',
+  CRITICAL: 'CRITICAL',
+} as const;
+
+export type TrendAnalysisRecommendedRating = typeof TrendAnalysisRecommendedRating[keyof typeof TrendAnalysisRecommendedRating];
+
+
+export const TrendAnalysisRecommendedRating = {
+  LOW: 'LOW',
+  MODERATE: 'MODERATE',
+  HIGH: 'HIGH',
+  CRITICAL: 'CRITICAL',
+} as const;
+
+export type TrendAnalysisConfidence = typeof TrendAnalysisConfidence[keyof typeof TrendAnalysisConfidence];
+
+
+export const TrendAnalysisConfidence = {
+  LOW: 'LOW',
+  MODERATE: 'MODERATE',
+  HIGH: 'HIGH',
+} as const;
+
+export interface TrendAnalysis {
+  direction: TrendAnalysisDirection;
+  previousRating: TrendAnalysisPreviousRating;
+  recommendedRating: TrendAnalysisRecommendedRating;
+  confidence: TrendAnalysisConfidence;
+  rationale: string;
+  drivers: string[];
+}
+
 export interface Assessment {
   id: string;
   selectedSourceFileIds: string[];
@@ -137,6 +234,9 @@ export interface Assessment {
   overallScore: number;
   summary: string;
   standards: AnalyticStandard[];
+  vectorResults: EvaluationVectorResult[];
+  historicalRatings: HistoricalRating[];
+  trendAnalysis: TrendAnalysis;
 }
 
 export interface AnalysisSession {
@@ -147,6 +247,7 @@ export interface AnalysisSession {
   status: AnalysisSessionStatus;
   createdAt: string;
   sourceFiles: SourceFile[];
+  sourceNotices: string[];
   assessment: Assessment | null;
 }
 
@@ -157,6 +258,14 @@ export const SourceConnectorStatus = {
   READY: 'READY',
   NEEDS_CONFIGURATION: 'NEEDS_CONFIGURATION',
   DISABLED: 'DISABLED',
+} as const;
+
+export type SourceConnectorMode = typeof SourceConnectorMode[keyof typeof SourceConnectorMode];
+
+
+export const SourceConnectorMode = {
+  LIVE: 'LIVE',
+  DEMONSTRATION: 'DEMONSTRATION',
 } as const;
 
 export type SourceConnectorSourceTypesItem = typeof SourceConnectorSourceTypesItem[keyof typeof SourceConnectorSourceTypesItem];
@@ -176,6 +285,19 @@ export interface SourceConnector {
   name: string;
   description: string;
   status: SourceConnectorStatus;
+  mode: SourceConnectorMode;
   sourceTypes: SourceConnectorSourceTypesItem[];
+}
+
+export interface EvaluationVectorDefinition {
+  id: string;
+  name: string;
+  description: string;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  weight: number;
+  placeholder: boolean;
 }
 

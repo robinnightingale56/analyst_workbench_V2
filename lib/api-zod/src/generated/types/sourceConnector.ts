@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { SourceConnectorMode } from './sourceConnectorMode';
 import type { SourceConnectorSourceTypesItem } from './sourceConnectorSourceTypesItem';
 import type { SourceConnectorStatus } from './sourceConnectorStatus';
 
@@ -13,5 +14,6 @@ export interface SourceConnector {
   name: string;
   description: string;
   status: SourceConnectorStatus;
+  mode: SourceConnectorMode;
   sourceTypes: SourceConnectorSourceTypesItem[];
 }

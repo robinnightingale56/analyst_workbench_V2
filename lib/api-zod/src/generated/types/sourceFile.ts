@@ -24,4 +24,6 @@ export interface SourceFile {
   keyPoints: string[];
   tags: string[];
   url: string;
+  retrievedAt: string;
+  collectionMethod: string;
 }

@@ -1,5 +1,9 @@
 import { assessSources } from "./analysis-engine";
-import { generateDemonstrationFiles } from "./source-adapters";
+import {
+  generateDemonstrationFiles,
+  runOpenSourceResearch,
+  type SourceFile,
+} from "./source-adapters";
 
 export type AnalysisSession = {
   id: string;
@@ -8,7 +12,8 @@ export type AnalysisSession = {
   classification: "UNCLASSIFIED" | "CUI" | "SECRET" | "TS";
   status: "DRAFT" | "RESEARCHING" | "READY_FOR_SELECTION" | "ASSESSING" | "COMPLETE";
   createdAt: string;
-  sourceFiles: ReturnType<typeof generateDemonstrationFiles>;
+  sourceFiles: SourceFile[];
+  sourceNotices: string[];
   assessment: ReturnType<typeof assessSources> | null;
 };
 
@@ -25,6 +30,9 @@ const sessions = new Map<string, AnalysisSession>([
       status: "READY_FOR_SELECTION",
       createdAt: new Date().toISOString(),
       sourceFiles: generateDemonstrationFiles("operating environment implications"),
+      sourceNotices: [
+        "This saved training session contains synthetic demonstration records.",
+      ],
       assessment: null,
     },
   ],
@@ -51,16 +59,28 @@ export function createSession(input: {
     status: "DRAFT",
     createdAt: new Date().toISOString(),
     sourceFiles: [],
+    sourceNotices: [],
     assessment: null,
   };
   sessions.set(session.id, session);
   return session;
 }
 
-export function runSessionResearch(id: string, maxResults?: number) {
+export async function runSessionResearch(
+  id: string,
+  connectorIds: string[],
+  maxResults?: number,
+) {
   const session = sessions.get(id);
   if (!session) return undefined;
-  session.sourceFiles = generateDemonstrationFiles(session.prompt, maxResults);
+  session.status = "RESEARCHING";
+  const result = await runOpenSourceResearch(
+    session.prompt,
+    connectorIds,
+    maxResults,
+  );
+  session.sourceFiles = result.files;
+  session.sourceNotices = result.notices;
   session.status = "READY_FOR_SELECTION";
   session.assessment = null;
   return session;

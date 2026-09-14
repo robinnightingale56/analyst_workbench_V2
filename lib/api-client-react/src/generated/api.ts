@@ -24,7 +24,9 @@ import type {
   AnalysisSessionInput,
   AssessmentInput,
   ErrorResponse,
+  EvaluationVectorDefinition,
   HealthStatus,
+  HistoricalRating,
   ResearchRunInput,
   SourceConnector
 } from './api.schemas';
@@ -619,6 +621,160 @@ export function useListSourceConnectors<TData = Awaited<ReturnType<typeof listSo
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListSourceConnectorsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListEvaluationVectorsUrl = () => {
+
+
+
+
+  return `/api/evaluation-vectors`
+}
+
+/**
+ * @summary List the stand-in evaluation vectors used for report grading
+ */
+export const listEvaluationVectors = async ( options?: Parameters<typeof customFetch>[1]): Promise<EvaluationVectorDefinition[]> => {
+
+  return customFetch<EvaluationVectorDefinition[]>(getListEvaluationVectorsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListEvaluationVectorsQueryKey = () => {
+    return [
+    `/api/evaluation-vectors`
+    ] as const;
+    }
+
+
+export const getListEvaluationVectorsQueryOptions = <TData = Awaited<ReturnType<typeof listEvaluationVectors>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEvaluationVectors>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListEvaluationVectorsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listEvaluationVectors>>> = ({ signal }) => listEvaluationVectors({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEvaluationVectors>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListEvaluationVectorsQueryResult = NonNullable<Awaited<ReturnType<typeof listEvaluationVectors>>>
+export type ListEvaluationVectorsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List the stand-in evaluation vectors used for report grading
+ */
+
+export function useListEvaluationVectors<TData = Awaited<ReturnType<typeof listEvaluationVectors>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEvaluationVectors>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListEvaluationVectorsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListHistoricalRatingsUrl = () => {
+
+
+
+
+  return `/api/historical-ratings`
+}
+
+/**
+ * @summary List prior-year ratings used for trend comparison
+ */
+export const listHistoricalRatings = async ( options?: Parameters<typeof customFetch>[1]): Promise<HistoricalRating[]> => {
+
+  return customFetch<HistoricalRating[]>(getListHistoricalRatingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListHistoricalRatingsQueryKey = () => {
+    return [
+    `/api/historical-ratings`
+    ] as const;
+    }
+
+
+export const getListHistoricalRatingsQueryOptions = <TData = Awaited<ReturnType<typeof listHistoricalRatings>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listHistoricalRatings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListHistoricalRatingsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listHistoricalRatings>>> = ({ signal }) => listHistoricalRatings({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listHistoricalRatings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListHistoricalRatingsQueryResult = NonNullable<Awaited<ReturnType<typeof listHistoricalRatings>>>
+export type ListHistoricalRatingsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List prior-year ratings used for trend comparison
+ */
+
+export function useListHistoricalRatings<TData = Awaited<ReturnType<typeof listHistoricalRatings>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listHistoricalRatings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListHistoricalRatingsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
