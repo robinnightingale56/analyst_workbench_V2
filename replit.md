@@ -1,6 +1,6 @@
-# [Project name]
+# Analyst Workbench
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A secure research and assessment workspace that turns analyst questions into source-backed BLUF cards and reviews selected evidence against ICD-203 tradecraft standards.
 
 ## Run & Operate
 
@@ -22,15 +22,25 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/analyst-workbench` — analyst-facing React application
+- `artifacts/api-server/src/lib/source-adapters.ts` — source adapter registry and demonstration retrieval
+- `artifacts/api-server/src/lib/analysis-engine.ts` — nine-standard ICD-203 assessment engine
+- `lib/api-spec/openapi.yaml` — source of truth for API contracts
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- External retrieval is isolated behind server-side source adapters; browser code never handles provider credentials.
+- Demonstration research is labeled as such and must not be represented as live-source reporting.
+- Classification markings are metadata and workflow controls only; this development environment is not approved to hold classified information.
+- The ICD-203 assessment provides structured analyst support, not an automated substitute for analytic review or release authority.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Create an analysis session from an intelligence question.
+- Select approved source adapters and run a research request.
+- Review source provenance, reliability, relevance, key points, and BLUF cards.
+- Select evidence and assess it against nine ICD-203 analytic tradecraft standards.
+- Review session history, standards guidance, connector readiness, and API health.
 
 ## User preferences
 
@@ -38,7 +48,8 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Current retrieval output is demonstration data until an approved live source connector is configured.
+- Never log prompt text, source content, credentials, or classification-sensitive metadata in production.
 
 ## Pointers
 

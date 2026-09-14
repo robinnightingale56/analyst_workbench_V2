@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Analyst Workbench"
+description = "A secure intelligence analysis workspace that turns analyst prompts into source-backed BLUF cards, supports evidence selection, and evaluates selected material against the nine ICD-203 analytic standards."
+version = "1.0.0"
+id = "artifacts/analyst-workbench"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23819
+
+[services.development]
+run = "pnpm --filter @workspace/analyst-workbench run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/analyst-workbench", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/analyst-workbench/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23819"
+BASE_PATH = "/"

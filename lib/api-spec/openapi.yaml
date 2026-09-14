@@ -10,6 +10,10 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: analysis
+    description: Analyst research and assessment operations
+  - name: sources
+    description: Configured research source adapters
 paths:
   /healthz:
     get:
@@ -24,7 +28,119 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /analysis-sessions:
+    get:
+      operationId: listAnalysisSessions
+      tags: [analysis]
+      summary: List recent analysis sessions
+      responses:
+        "200":
+          description: Recent sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnalysisSession"
+    post:
+      operationId: createAnalysisSession
+      tags: [analysis]
+      summary: Create an analyst research session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalysisSessionInput"
+      responses:
+        "201":
+          description: Created session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisSession"
+  /analysis-sessions/{sessionId}:
+    get:
+      operationId: getAnalysisSession
+      tags: [analysis]
+      summary: Get an analysis session and its source files
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Analysis session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisSession"
+        "404":
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /analysis-sessions/{sessionId}/research:
+    post:
+      operationId: runResearch
+      tags: [analysis]
+      summary: Run research against selected source adapters
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResearchRunInput"
+      responses:
+        "200":
+          description: Updated session with generated source files
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisSession"
+  /analysis-sessions/{sessionId}/assessment:
+    post:
+      operationId: createAssessment
+      tags: [analysis]
+      summary: Assess selected source files against ICD-203 standards
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssessmentInput"
+      responses:
+        "200":
+          description: Updated session with ICD-203 assessment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisSession"
+  /source-connectors:
+    get:
+      operationId: listSourceConnectors
+      tags: [sources]
+      summary: List configured and available source adapters
+      responses:
+        "200":
+          description: Source connectors
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SourceConnector"
 components:
+  parameters:
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +149,180 @@ components:
           type: string
       required:
         - status
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    AnalysisSessionInput:
+      type: object
+      required: [prompt]
+      properties:
+        prompt:
+          type: string
+          minLength: 5
+        analyst:
+          type: string
+        classification:
+          type: string
+          enum: [UNCLASSIFIED, CUI, SECRET, TS]
+    ResearchRunInput:
+      type: object
+      required: [sourceConnectorIds]
+      properties:
+        sourceConnectorIds:
+          type: array
+          items:
+            type: string
+        maxResults:
+          type: integer
+          minimum: 1
+          maximum: 20
+    AssessmentInput:
+      type: object
+      required: [selectedSourceFileIds]
+      properties:
+        selectedSourceFileIds:
+          type: array
+          items:
+            type: string
+    AnalysisSession:
+      type: object
+      required:
+        - id
+        - prompt
+        - analyst
+        - classification
+        - status
+        - createdAt
+        - sourceFiles
+        - assessment
+      properties:
+        id:
+          type: string
+        prompt:
+          type: string
+        analyst:
+          type: string
+        classification:
+          type: string
+          enum: [UNCLASSIFIED, CUI, SECRET, TS]
+        status:
+          type: string
+          enum: [DRAFT, RESEARCHING, READY_FOR_SELECTION, ASSESSING, COMPLETE]
+        createdAt:
+          type: string
+        sourceFiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceFile"
+        assessment:
+          oneOf:
+            - $ref: "#/components/schemas/Assessment"
+            - type: "null"
+    SourceFile:
+      type: object
+      required:
+        - id
+        - title
+        - source
+        - sourceType
+        - publishedAt
+        - relevance
+        - reliability
+        - bluf
+        - keyPoints
+        - tags
+        - url
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        source:
+          type: string
+        sourceType:
+          type: string
+          enum: [NEWS, GOVERNMENT, ACADEMIC, SOCIAL, WEB, INTERNAL]
+        publishedAt:
+          type: string
+        relevance:
+          type: number
+          minimum: 0
+          maximum: 1
+        reliability:
+          type: string
+          enum: [HIGH, MODERATE, LOW, UNKNOWN]
+        bluf:
+          type: string
+        keyPoints:
+          type: array
+          items:
+            type: string
+        tags:
+          type: array
+          items:
+            type: string
+        url:
+          type: string
+    SourceConnector:
+      type: object
+      required: [id, name, description, status, sourceTypes]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [READY, NEEDS_CONFIGURATION, DISABLED]
+        sourceTypes:
+          type: array
+          items:
+            type: string
+            enum: [NEWS, GOVERNMENT, ACADEMIC, SOCIAL, WEB, INTERNAL]
+    Assessment:
+      type: object
+      required: [id, selectedSourceFileIds, overallScore, standards, summary]
+      properties:
+        id:
+          type: string
+        selectedSourceFileIds:
+          type: array
+          items:
+            type: string
+        overallScore:
+          type: number
+          minimum: 0
+          maximum: 100
+        summary:
+          type: string
+        standards:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnalyticStandard"
+    AnalyticStandard:
+      type: object
+      required: [id, name, shortName, score, status, finding, prompt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        shortName:
+          type: string
+        score:
+          type: number
+          minimum: 0
+          maximum: 100
+        status:
+          type: string
+          enum: [PASS, REVIEW, GAP]
+        finding:
+          type: string
+        prompt:
+          type: string
 
