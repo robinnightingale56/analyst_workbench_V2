@@ -23,4 +23,6 @@ export interface AnalysisSession {
   /** @minimum 1 */
   version: number;
   updatedAt: string;
+  /** @nullable */
+  archivedAt: string | null;
 }

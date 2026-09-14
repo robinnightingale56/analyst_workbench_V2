@@ -33,6 +33,12 @@ export interface AnalysisSessionInput {
   classification?: AnalysisSessionInputClassification;
 }
 
+export interface AnalysisSessionArchiveUpdate {
+  archived: boolean;
+  /** @minimum 1 */
+  expectedVersion: number;
+}
+
 export interface ResearchRunInput {
   sourceConnectorIds: string[];
   /**
@@ -366,6 +372,8 @@ export interface AnalysisSession {
   /** @minimum 1 */
   version: number;
   updatedAt: string;
+  /** @nullable */
+  archivedAt: string | null;
 }
 
 export type SourceConnectorStatus = typeof SourceConnectorStatus[keyof typeof SourceConnectorStatus];
@@ -417,4 +425,8 @@ export interface EvaluationVectorDefinition {
   weight: number;
   placeholder: boolean;
 }
+
+export type ListAnalysisSessionsParams = {
+includeArchived?: boolean;
+};
 

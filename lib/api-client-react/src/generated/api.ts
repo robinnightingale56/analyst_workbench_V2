@@ -21,6 +21,7 @@ import type {
 
 import type {
   AnalysisSession,
+  AnalysisSessionArchiveUpdate,
   AnalysisSessionInput,
   AssessmentInput,
   ErrorResponse,
@@ -28,6 +29,7 @@ import type {
   HealthStatus,
   HistoricalRating,
   IncidentReviewUpdate,
+  ListAnalysisSessionsParams,
   ResearchRunInput,
   SourceConnector
 } from './api.schemas';
@@ -137,20 +139,27 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
 
 
 
-export const getListAnalysisSessionsUrl = () => {
+export const getListAnalysisSessionsUrl = (params?: ListAnalysisSessionsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/analysis-sessions`
+  return stringifiedParams.length > 0 ? `/api/analysis-sessions?${stringifiedParams}` : `/api/analysis-sessions`
 }
 
 /**
  * @summary List recent analysis sessions
  */
-export const listAnalysisSessions = async ( options?: Parameters<typeof customFetch>[1]): Promise<AnalysisSession[]> => {
+export const listAnalysisSessions = async (params?: ListAnalysisSessionsParams, options?: Parameters<typeof customFetch>[1]): Promise<AnalysisSession[]> => {
 
-  return customFetch<AnalysisSession[]>(getListAnalysisSessionsUrl(),
+  return customFetch<AnalysisSession[]>(getListAnalysisSessionsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -163,23 +172,23 @@ export const listAnalysisSessions = async ( options?: Parameters<typeof customFe
 
 
 
-export const getListAnalysisSessionsQueryKey = () => {
+export const getListAnalysisSessionsQueryKey = (params?: ListAnalysisSessionsParams,) => {
     return [
-    `/api/analysis-sessions`
+    `/api/analysis-sessions`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getListAnalysisSessionsQueryOptions = <TData = Awaited<ReturnType<typeof listAnalysisSessions>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAnalysisSessions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListAnalysisSessionsQueryOptions = <TData = Awaited<ReturnType<typeof listAnalysisSessions>>, TError = ErrorType<unknown>>(params?: ListAnalysisSessionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAnalysisSessions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListAnalysisSessionsQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getListAnalysisSessionsQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAnalysisSessions>>> = ({ signal }) => listAnalysisSessions({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAnalysisSessions>>> = ({ signal }) => listAnalysisSessions(params, { signal, ...requestOptions });
 
 
 
@@ -197,11 +206,11 @@ export type ListAnalysisSessionsQueryError = ErrorType<unknown>
  */
 
 export function useListAnalysisSessions<TData = Awaited<ReturnType<typeof listAnalysisSessions>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAnalysisSessions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: ListAnalysisSessionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAnalysisSessions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getListAnalysisSessionsQueryOptions(options)
+  const queryOptions = getListAnalysisSessionsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -378,6 +387,95 @@ export function useGetAnalysisSession<TData = Awaited<ReturnType<typeof getAnaly
 
 
 
+
+export const getUpdateAnalysisSessionArchiveUrl = (sessionId: string,) => {
+
+
+
+
+  return `/api/analysis-sessions/${sessionId}`
+}
+
+/**
+ * @summary Archive or restore a non-finalized analysis session
+ */
+export const updateAnalysisSessionArchive = async (sessionId: string,
+    analysisSessionArchiveUpdate: AnalysisSessionArchiveUpdate, options?: Parameters<typeof customFetch>[1]): Promise<AnalysisSession> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AnalysisSession>(getUpdateAnalysisSessionArchiveUrl(sessionId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(analysisSessionArchiveUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdateAnalysisSessionArchiveMutationKey = () => ['updateAnalysisSessionArchive'] as const;
+
+export const getUpdateAnalysisSessionArchiveMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAnalysisSessionArchive>>, TError,UpdateAnalysisSessionArchiveMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateAnalysisSessionArchive>>, TError,UpdateAnalysisSessionArchiveMutationVariables, TContext> => {
+
+const mutationKey = getUpdateAnalysisSessionArchiveMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAnalysisSessionArchive>>, UpdateAnalysisSessionArchiveMutationVariables> = (props) => {
+          const {sessionId,data} = props ?? {};
+
+          return  updateAnalysisSessionArchive(sessionId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAnalysisSessionArchiveMutationResult = NonNullable<Awaited<ReturnType<typeof updateAnalysisSessionArchive>>>
+    export type UpdateAnalysisSessionArchiveMutationBody = BodyType<AnalysisSessionArchiveUpdate>
+    export type UpdateAnalysisSessionArchiveMutationError = ErrorType<ErrorResponse>
+    export type UpdateAnalysisSessionArchiveMutationVariables = {sessionId: string;data: BodyType<AnalysisSessionArchiveUpdate>}
+
+    /**
+ * @summary Archive or restore a non-finalized analysis session
+ */
+export const useUpdateAnalysisSessionArchive = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAnalysisSessionArchive>>, TError,UpdateAnalysisSessionArchiveMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateAnalysisSessionArchive>>,
+        TError,
+        UpdateAnalysisSessionArchiveMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateAnalysisSessionArchiveMutationOptions(options));
+    }
 
 export const getRunResearchUrl = (sessionId: string,) => {
 

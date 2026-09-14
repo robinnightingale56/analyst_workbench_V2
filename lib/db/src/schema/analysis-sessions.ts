@@ -6,6 +6,8 @@ export const analysisSessionsTable = pgTable("analysis_sessions", {
   id: text("id").primaryKey(),
   data: jsonb("data").notNull(),
   version: integer("version").notNull().default(1),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  finalizedAt: timestamp("finalized_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

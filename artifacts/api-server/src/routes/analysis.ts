@@ -8,6 +8,7 @@ import {
   GetAnalysisSessionParams,
   GetAnalysisSessionResponse,
   ListAnalysisSessionsResponse,
+  ListAnalysisSessionsQueryParams,
   ListEvaluationVectorsResponse,
   ListHistoricalRatingsResponse,
   ListSourceConnectorsResponse,
@@ -17,15 +18,20 @@ import {
   UpdateIncidentReviewBody,
   UpdateIncidentReviewParams,
   UpdateIncidentReviewResponse,
+  UpdateAnalysisSessionArchiveBody,
+  UpdateAnalysisSessionArchiveParams,
+  UpdateAnalysisSessionArchiveResponse,
 } from "@workspace/api-zod";
 import {
   assessSession,
   createSession,
   getSession,
   listSessions,
+  setSessionArchived,
   runSessionResearch,
   updateIncidentReview,
   AnalysisVersionConflictError,
+  FinalizedAnalysisArchiveError,
 } from "../lib/analysis-store";
 import {
   evaluationVectors,
@@ -38,8 +44,17 @@ import { isKnownSourceConnector } from "../lib/source-adapters";
 
 const router: IRouter = Router();
 
-router.get("/analysis-sessions", async (_req, res) => {
-  res.json(ListAnalysisSessionsResponse.parse(await listSessions()));
+router.get("/analysis-sessions", async (req, res) => {
+  const query = ListAnalysisSessionsQueryParams.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: query.error.message });
+    return;
+  }
+  res.json(
+    ListAnalysisSessionsResponse.parse(
+      await listSessions(query.data.includeArchived ?? false),
+    ),
+  );
 });
 
 router.post("/analysis-sessions", async (req, res) => {
@@ -64,6 +79,40 @@ router.get("/analysis-sessions/:sessionId", async (req, res) => {
     return;
   }
   res.json(GetAnalysisSessionResponse.parse(session));
+});
+
+router.patch("/analysis-sessions/:sessionId", async (req, res) => {
+  const params = UpdateAnalysisSessionArchiveParams.safeParse(req.params);
+  const body = UpdateAnalysisSessionArchiveBody.safeParse(req.body);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+  try {
+    const session = await setSessionArchived(
+      params.data.sessionId,
+      body.data.archived,
+      body.data.expectedVersion,
+    );
+    if (!session) {
+      res.status(404).json({ error: "Analysis session not found" });
+      return;
+    }
+    res.json(UpdateAnalysisSessionArchiveResponse.parse(session));
+  } catch (error) {
+    if (
+      error instanceof AnalysisVersionConflictError ||
+      error instanceof FinalizedAnalysisArchiveError
+    ) {
+      res.status(409).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
 });
 
 router.post("/analysis-sessions/:sessionId/research", async (req, res): Promise<void> => {

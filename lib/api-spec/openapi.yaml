@@ -33,6 +33,13 @@ paths:
       operationId: listAnalysisSessions
       tags: [analysis]
       summary: List recent analysis sessions
+      parameters:
+        - name: includeArchived
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
       responses:
         "200":
           description: Recent sessions
@@ -75,6 +82,31 @@ paths:
                 $ref: "#/components/schemas/AnalysisSession"
         "404":
           description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateAnalysisSessionArchive
+      tags: [analysis]
+      summary: Archive or restore a non-finalized analysis session
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalysisSessionArchiveUpdate"
+      responses:
+        "200":
+          description: Updated session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisSession"
+        "409":
+          description: Session is finalized or was changed by another request
           content:
             application/json:
               schema:
@@ -221,6 +253,15 @@ components:
         classification:
           type: string
           enum: [UNCLASSIFIED, CUI, SECRET, TS]
+    AnalysisSessionArchiveUpdate:
+      type: object
+      required: [archived, expectedVersion]
+      properties:
+        archived:
+          type: boolean
+        expectedVersion:
+          type: integer
+          minimum: 1
     ResearchRunInput:
       type: object
       required: [sourceConnectorIds]
@@ -293,6 +334,7 @@ components:
         - assessment
         - version
         - updatedAt
+        - archivedAt
       properties:
         id:
           type: string
@@ -325,6 +367,8 @@ components:
           minimum: 1
         updatedAt:
           type: string
+        archivedAt:
+          type: ["string", "null"]
     SourceFile:
       type: object
       required:

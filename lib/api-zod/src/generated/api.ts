@@ -20,6 +20,12 @@ export const HealthCheckResponse = zod.object({
 /**
  * @summary List recent analysis sessions
  */
+export const listAnalysisSessionsQueryIncludeArchivedDefault = false;
+
+export const ListAnalysisSessionsQueryParams = zod.object({
+  "includeArchived": zod.coerce.boolean().default(listAnalysisSessionsQueryIncludeArchivedDefault)
+})
+
 export const listAnalysisSessionsResponseSourceFilesItemRelevanceMin = 0;
 export const listAnalysisSessionsResponseSourceFilesItemRelevanceMax = 1;
 
@@ -137,7 +143,8 @@ export const ListAnalysisSessionsResponseItem = zod.object({
 }),zod.null()])
 }),zod.null()]),
   "version": zod.number().int().min(1),
-  "updatedAt": zod.string()
+  "updatedAt": zod.string(),
+  "archivedAt": zod.string().nullable()
 })
 export const ListAnalysisSessionsResponse = zod.array(ListAnalysisSessionsResponseItem)
 
@@ -273,7 +280,8 @@ export const CreateAnalysisSessionResponse = zod.object({
 }),zod.null()])
 }),zod.null()]),
   "version": zod.number().int().min(1),
-  "updatedAt": zod.string()
+  "updatedAt": zod.string(),
+  "archivedAt": zod.string().nullable()
 })
 
 
@@ -401,7 +409,145 @@ export const GetAnalysisSessionResponse = zod.object({
 }),zod.null()])
 }),zod.null()]),
   "version": zod.number().int().min(1),
-  "updatedAt": zod.string()
+  "updatedAt": zod.string(),
+  "archivedAt": zod.string().nullable()
+})
+
+
+/**
+ * @summary Archive or restore a non-finalized analysis session
+ */
+export const UpdateAnalysisSessionArchiveParams = zod.object({
+  "sessionId": zod.coerce.string()
+})
+
+
+
+
+export const UpdateAnalysisSessionArchiveBody = zod.object({
+  "archived": zod.boolean(),
+  "expectedVersion": zod.number().int().min(1)
+})
+
+export const updateAnalysisSessionArchiveResponseSourceFilesItemRelevanceMin = 0;
+export const updateAnalysisSessionArchiveResponseSourceFilesItemRelevanceMax = 1;
+
+export const updateAnalysisSessionArchiveResponseAssessmentOneOverallScoreMin = 0;
+export const updateAnalysisSessionArchiveResponseAssessmentOneOverallScoreMax = 100;
+
+export const updateAnalysisSessionArchiveResponseAssessmentOneStandardsItemScoreMin = 0;
+export const updateAnalysisSessionArchiveResponseAssessmentOneStandardsItemScoreMax = 100;
+
+export const updateAnalysisSessionArchiveResponseAssessmentOneVectorResultsItemWeightMin = 0;
+export const updateAnalysisSessionArchiveResponseAssessmentOneVectorResultsItemWeightMax = 1;
+
+export const updateAnalysisSessionArchiveResponseAssessmentOneVectorResultsItemScoreMin = 0;
+export const updateAnalysisSessionArchiveResponseAssessmentOneVectorResultsItemScoreMax = 100;
+
+export const updateAnalysisSessionArchiveResponseAssessmentOneHistoricalRatingsItemScoreMin = 0;
+export const updateAnalysisSessionArchiveResponseAssessmentOneHistoricalRatingsItemScoreMax = 100;
+
+
+export const updateAnalysisSessionArchiveResponseAssessmentOneCountAnswerOneRequestedPartiesMin = 2;
+
+export const updateAnalysisSessionArchiveResponseAssessmentOneCountAnswerOneProvisionalCountMin = 0;
+
+
+
+
+
+export const UpdateAnalysisSessionArchiveResponse = zod.object({
+  "id": zod.string(),
+  "prompt": zod.string(),
+  "analyst": zod.string(),
+  "classification": zod.enum(['UNCLASSIFIED', 'CUI', 'SECRET', 'TS']),
+  "status": zod.enum(['DRAFT', 'RESEARCHING', 'READY_FOR_SELECTION', 'ASSESSING', 'COMPLETE', 'FAILED']),
+  "createdAt": zod.string(),
+  "sourceFiles": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "source": zod.string(),
+  "sourceType": zod.enum(['NEWS', 'GOVERNMENT', 'ACADEMIC', 'SOCIAL', 'WEB', 'INTERNAL']),
+  "publishedAt": zod.string(),
+  "relevance": zod.number().min(updateAnalysisSessionArchiveResponseSourceFilesItemRelevanceMin).max(updateAnalysisSessionArchiveResponseSourceFilesItemRelevanceMax),
+  "reliability": zod.enum(['HIGH', 'MODERATE', 'LOW', 'UNKNOWN']),
+  "bluf": zod.string(),
+  "keyPoints": zod.array(zod.string()),
+  "tags": zod.array(zod.string()),
+  "url": zod.string(),
+  "retrievedAt": zod.string(),
+  "collectionMethod": zod.string(),
+  "content": zod.string(),
+  "contentDepth": zod.enum(['FULL_TEXT', 'EXCERPT', 'METADATA'])
+})),
+  "sourceNotices": zod.array(zod.string()),
+  "assessment": zod.union([zod.object({
+  "id": zod.string(),
+  "selectedSourceFileIds": zod.array(zod.string()),
+  "overallScore": zod.number().min(updateAnalysisSessionArchiveResponseAssessmentOneOverallScoreMin).max(updateAnalysisSessionArchiveResponseAssessmentOneOverallScoreMax),
+  "summary": zod.string(),
+  "standards": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "shortName": zod.string(),
+  "score": zod.number().min(updateAnalysisSessionArchiveResponseAssessmentOneStandardsItemScoreMin).max(updateAnalysisSessionArchiveResponseAssessmentOneStandardsItemScoreMax),
+  "status": zod.enum(['PASS', 'REVIEW', 'GAP']),
+  "finding": zod.string(),
+  "prompt": zod.string()
+})),
+  "vectorResults": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "weight": zod.number().min(updateAnalysisSessionArchiveResponseAssessmentOneVectorResultsItemWeightMin).max(updateAnalysisSessionArchiveResponseAssessmentOneVectorResultsItemWeightMax),
+  "score": zod.number().min(updateAnalysisSessionArchiveResponseAssessmentOneVectorResultsItemScoreMin).max(updateAnalysisSessionArchiveResponseAssessmentOneVectorResultsItemScoreMax),
+  "status": zod.enum(['STRONG', 'MIXED', 'WEAK']),
+  "rationale": zod.string(),
+  "evidenceSourceFileIds": zod.array(zod.string())
+})),
+  "historicalRatings": zod.array(zod.object({
+  "year": zod.number().int(),
+  "rating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
+  "score": zod.number().min(updateAnalysisSessionArchiveResponseAssessmentOneHistoricalRatingsItemScoreMin).max(updateAnalysisSessionArchiveResponseAssessmentOneHistoricalRatingsItemScoreMax),
+  "summary": zod.string(),
+  "placeholder": zod.boolean()
+})),
+  "trendAnalysis": zod.object({
+  "direction": zod.enum(['DOWN', 'SAME', 'UP']),
+  "previousRating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
+  "recommendedRating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
+  "confidence": zod.enum(['LOW', 'MODERATE', 'HIGH']),
+  "rationale": zod.string(),
+  "drivers": zod.array(zod.string())
+}),
+  "provisional": zod.boolean(),
+  "methodology": zod.string(),
+  "countAnswer": zod.union([zod.object({
+  "question": zod.string(),
+  "requestedParties": zod.array(zod.string().min(1)).min(updateAnalysisSessionArchiveResponseAssessmentOneCountAnswerOneRequestedPartiesMin),
+  "eventType": zod.enum(['PHYSICAL_CLASH']),
+  "dateRange": zod.union([zod.object({
+  "startDate": zod.string(),
+  "endDate": zod.string()
+}),zod.null()]),
+  "provisionalCount": zod.number().int().min(updateAnalysisSessionArchiveResponseAssessmentOneCountAnswerOneProvisionalCountMin),
+  "confidence": zod.enum(['LOW', 'MODERATE', 'HIGH']),
+  "answerStatus": zod.enum(['SUPPORTED', 'INSUFFICIENT_EVIDENCE']),
+  "inclusionCriteria": zod.string(),
+  "finalized": zod.boolean(),
+  "incidents": zod.array(zod.object({
+  "id": zod.string(),
+  "date": zod.string(),
+  "location": zod.string(),
+  "parties": zod.array(zod.string().min(1)),
+  "description": zod.string(),
+  "sourceFileIds": zod.array(zod.string()),
+  "status": zod.enum(['INCLUDED', 'EXCLUDED'])
+}))
+}),zod.null()])
+}),zod.null()]),
+  "version": zod.number().int().min(1),
+  "updatedAt": zod.string(),
+  "archivedAt": zod.string().nullable()
 })
 
 
@@ -538,7 +684,8 @@ export const RunResearchResponse = zod.object({
 }),zod.null()])
 }),zod.null()]),
   "version": zod.number().int().min(1),
-  "updatedAt": zod.string()
+  "updatedAt": zod.string(),
+  "archivedAt": zod.string().nullable()
 })
 
 
@@ -670,7 +817,8 @@ export const CreateAssessmentResponse = zod.object({
 }),zod.null()])
 }),zod.null()]),
   "version": zod.number().int().min(1),
-  "updatedAt": zod.string()
+  "updatedAt": zod.string(),
+  "archivedAt": zod.string().nullable()
 })
 
 
@@ -818,7 +966,8 @@ export const UpdateIncidentReviewResponse = zod.object({
 }),zod.null()])
 }),zod.null()]),
   "version": zod.number().int().min(1),
-  "updatedAt": zod.string()
+  "updatedAt": zod.string(),
+  "archivedAt": zod.string().nullable()
 })
 
 

@@ -1,5 +1,5 @@
 import { analysisSessionsTable, db } from "@workspace/db";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, lt } from "drizzle-orm";
 import { assessSources } from "./analysis-engine";
 import {
   generateDemonstrationFiles,
@@ -21,6 +21,7 @@ export type AnalysisSession = {
     | "FAILED";
   createdAt: string;
   updatedAt: string;
+  archivedAt: string | null;
   version: number;
   sourceFiles: SourceFile[];
   sourceNotices: string[];
@@ -34,7 +35,15 @@ export class AnalysisVersionConflictError extends Error {
   }
 }
 
+export class FinalizedAnalysisArchiveError extends Error {
+  constructor() {
+    super("Finalized analysis reviews cannot be archived");
+    this.name = "FinalizedAnalysisArchiveError";
+  }
+}
+
 const seededId = "demo-session";
+const archivedSessionRetentionDays = 30;
 
 function rowToSession(row: typeof analysisSessionsTable.$inferSelect): AnalysisSession {
   const data = row.data as Omit<AnalysisSession, "version" | "updatedAt">;
@@ -42,12 +51,13 @@ function rowToSession(row: typeof analysisSessionsTable.$inferSelect): AnalysisS
     ...data,
     version: row.version,
     updatedAt: row.updatedAt.toISOString(),
+    archivedAt: row.archivedAt?.toISOString() ?? null,
   };
 }
 
 async function ensureDemonstrationSession() {
   const now = new Date();
-  const session: Omit<AnalysisSession, "version" | "updatedAt"> = {
+  const session: Omit<AnalysisSession, "version" | "updatedAt" | "archivedAt"> = {
     id: seededId,
     prompt:
       "Assess the near-term implications of the reported operating-environment shift and identify indicators that would change the judgment.",
@@ -73,10 +83,22 @@ async function writeSession(
 ): Promise<AnalysisSession> {
   const updatedAt = new Date();
   const nextVersion = expectedVersion + 1;
-  const { version: _version, updatedAt: _updatedAt, ...data } = session;
+  const {
+    version: _version,
+    updatedAt: _updatedAt,
+    archivedAt: _archivedAt,
+    ...data
+  } = session;
   const [row] = await db
     .update(analysisSessionsTable)
-    .set({ data, version: nextVersion, updatedAt })
+    .set({
+      data,
+      version: nextVersion,
+      updatedAt,
+      finalizedAt: session.assessment?.countAnswer?.finalized
+        ? updatedAt
+        : null,
+    })
     .where(
       and(
         eq(analysisSessionsTable.id, session.id),
@@ -88,11 +110,28 @@ async function writeSession(
   return rowToSession(row);
 }
 
-export async function listSessions() {
+async function purgeExpiredArchivedSessions(now = new Date()) {
+  const cutoff = new Date(
+    now.getTime() - archivedSessionRetentionDays * 24 * 60 * 60 * 1000,
+  );
+  await db
+    .delete(analysisSessionsTable)
+    .where(
+      and(
+        isNotNull(analysisSessionsTable.archivedAt),
+        lt(analysisSessionsTable.archivedAt, cutoff),
+        isNull(analysisSessionsTable.finalizedAt),
+      ),
+    );
+}
+
+export async function listSessions(includeArchived = false) {
   await ensureDemonstrationSession();
+  await purgeExpiredArchivedSessions();
   const rows = await db
     .select()
     .from(analysisSessionsTable)
+    .where(includeArchived ? undefined : isNull(analysisSessionsTable.archivedAt))
     .orderBy(desc(analysisSessionsTable.createdAt));
   return rows.map(rowToSession);
 }
@@ -113,7 +152,7 @@ export async function createSession(input: {
   classification?: AnalysisSession["classification"];
 }) {
   const now = new Date();
-  const data: Omit<AnalysisSession, "version" | "updatedAt"> = {
+  const data: Omit<AnalysisSession, "version" | "updatedAt" | "archivedAt"> = {
     id: crypto.randomUUID(),
     prompt: input.prompt,
     analyst: input.analyst ?? "Current Analyst",
@@ -129,6 +168,36 @@ export async function createSession(input: {
     .values({ id: data.id, data, version: 1, createdAt: now, updatedAt: now })
     .returning();
   return rowToSession(row!);
+}
+
+export async function setSessionArchived(
+  id: string,
+  archived: boolean,
+  expectedVersion: number,
+) {
+  const session = await getSession(id);
+  if (!session) return undefined;
+  if (session.version !== expectedVersion) throw new AnalysisVersionConflictError();
+  if (archived && session.assessment?.countAnswer?.finalized) {
+    throw new FinalizedAnalysisArchiveError();
+  }
+  const updatedAt = new Date();
+  const [row] = await db
+    .update(analysisSessionsTable)
+    .set({
+      archivedAt: archived ? updatedAt : null,
+      updatedAt,
+      version: expectedVersion + 1,
+    })
+    .where(
+      and(
+        eq(analysisSessionsTable.id, id),
+        eq(analysisSessionsTable.version, expectedVersion),
+      ),
+    )
+    .returning();
+  if (!row) throw new AnalysisVersionConflictError();
+  return rowToSession(row);
 }
 
 export async function setSessionSources(

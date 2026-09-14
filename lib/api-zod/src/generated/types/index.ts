@@ -7,6 +7,7 @@
  */
 
 export * from './analysisSession';
+export * from './analysisSessionArchiveUpdate';
 export * from './analysisSessionClassification';
 export * from './analysisSessionInput';
 export * from './analysisSessionInputClassification';
@@ -32,6 +33,7 @@ export * from './incidentReviewInput';
 export * from './incidentReviewInputStatus';
 export * from './incidentReviewUpdate';
 export * from './incidentStatus';
+export * from './listAnalysisSessionsParams';
 export * from './researchRunInput';
 export * from './sourceConnector';
 export * from './sourceConnectorMode';

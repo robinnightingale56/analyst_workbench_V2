@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
+import { analysisSessionsTable, db } from "@workspace/db";
+import { eq } from "drizzle-orm";
 import app from "../app";
 import { buildCountAnswer, deduplicateIncidents, incidentCitationError, type Incident } from "./analysis-engine";
 import { createSession, getSession, setSessionSources } from "./analysis-store";
@@ -578,5 +580,110 @@ test("API review contract rejects a stale concurrent update", async () => {
     const persisted = await getSession(session.id);
     assert.equal(persisted?.version, firstUpdate.body.version);
     assert.equal(persisted?.assessment?.countAnswer?.incidents[0]?.status, "INCLUDED");
+  });
+});
+
+test("archived sessions are hidden by default and can be restored", async () => {
+  await withApi(async (baseUrl) => {
+    const session = await createSession({ prompt: "Archive this obsolete draft session" });
+    const archived = await requestJson(
+      baseUrl,
+      `/analysis-sessions/${session.id}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          archived: true,
+          expectedVersion: session.version,
+        }),
+      },
+    );
+    assert.equal(archived.response.status, 200);
+    assert.equal(typeof archived.body.archivedAt, "string");
+
+    const visible = await requestJson(baseUrl, "/analysis-sessions");
+    assert.equal(
+      visible.body.some((candidate: { id: string }) => candidate.id === session.id),
+      false,
+    );
+
+    const includingArchived = await requestJson(
+      baseUrl,
+      "/analysis-sessions?includeArchived=true",
+    );
+    assert.equal(
+      includingArchived.body.some(
+        (candidate: { id: string }) => candidate.id === session.id,
+      ),
+      true,
+    );
+
+    const restored = await requestJson(
+      baseUrl,
+      `/analysis-sessions/${session.id}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          archived: false,
+          expectedVersion: archived.body.version,
+        }),
+      },
+    );
+    assert.equal(restored.response.status, 200);
+    assert.equal(restored.body.archivedAt, null);
+  });
+});
+
+test("finalized reviews cannot be archived", async () => {
+  await withApi(async (baseUrl) => {
+    const session = await createCountSession();
+    const assessed = await requestJson(
+      baseUrl,
+      `/analysis-sessions/${session.id}/assessment`,
+      {
+        method: "POST",
+        body: JSON.stringify({ selectedSourceFileIds: ["a"] }),
+      },
+    );
+    const finalized = await requestJson(
+      baseUrl,
+      `/analysis-sessions/${session.id}/assessment`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          incidents: assessed.body.assessment.countAnswer.incidents,
+          finalized: true,
+          expectedVersion: assessed.body.version,
+        }),
+      },
+    );
+    assert.equal(finalized.response.status, 200);
+
+    const archive = await requestJson(
+      baseUrl,
+      `/analysis-sessions/${session.id}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          archived: true,
+          expectedVersion: finalized.body.version,
+        }),
+      },
+    );
+    assert.equal(archive.response.status, 409);
+    assert.match(archive.body.error, /Finalized/);
+  });
+});
+
+test("retention removes only expired archived non-finalized sessions", async () => {
+  await withApi(async (baseUrl) => {
+    const session = await createSession({ prompt: "Expire this archived test session" });
+    const expiredAt = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+    await db
+      .update(analysisSessionsTable)
+      .set({ archivedAt: expiredAt })
+      .where(eq(analysisSessionsTable.id, session.id));
+
+    await requestJson(baseUrl, "/analysis-sessions");
+    assert.equal(await getSession(session.id), undefined);
   });
 });
