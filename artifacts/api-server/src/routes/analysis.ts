@@ -27,6 +27,7 @@ import {
   historicalRatings,
 } from "../lib/analysis-engine";
 import { sourceConnectors } from "../lib/source-adapters";
+import { isKnownSourceConnector } from "../lib/source-adapters";
 
 const router: IRouter = Router();
 
@@ -73,6 +74,24 @@ router.post("/analysis-sessions/:sessionId/research", async (req, res): Promise<
     res.status(400).json({ error: "Select at least one source connector" });
     return;
   }
+  const existing = getSession(params.data.sessionId);
+  if (!existing) {
+    res.status(404).json({ error: "Analysis session not found" });
+    return;
+  }
+  if (existing.classification !== "UNCLASSIFIED") {
+    res.status(403).json({
+      error: "Public web research is permitted only for UNCLASSIFIED sessions",
+    });
+    return;
+  }
+  const unknownConnectors = body.data.sourceConnectorIds.filter(
+    (id) => !isKnownSourceConnector(id),
+  );
+  if (unknownConnectors.length > 0) {
+    res.status(400).json({ error: "One or more source connectors are not supported" });
+    return;
+  }
   const session = await runSessionResearch(
     params.data.sessionId,
     body.data.sourceConnectorIds,
@@ -102,6 +121,18 @@ router.post("/analysis-sessions/:sessionId/assessment", (req, res) => {
   }
   if (body.data.selectedSourceFileIds.length === 0) {
     res.status(400).json({ error: "Select at least one source file" });
+    return;
+  }
+  const existing = getSession(params.data.sessionId);
+  if (!existing) {
+    res.status(404).json({ error: "Analysis session not found" });
+    return;
+  }
+  const validIds = new Set(existing.sourceFiles.map((file) => file.id));
+  if (body.data.selectedSourceFileIds.some((id) => !validIds.has(id))) {
+    res.status(400).json({
+      error: "One or more selected source files do not belong to this session",
+    });
     return;
   }
   const session = assessSession(

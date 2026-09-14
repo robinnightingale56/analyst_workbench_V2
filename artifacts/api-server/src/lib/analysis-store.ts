@@ -10,7 +10,13 @@ export type AnalysisSession = {
   prompt: string;
   analyst: string;
   classification: "UNCLASSIFIED" | "CUI" | "SECRET" | "TS";
-  status: "DRAFT" | "RESEARCHING" | "READY_FOR_SELECTION" | "ASSESSING" | "COMPLETE";
+  status:
+    | "DRAFT"
+    | "RESEARCHING"
+    | "READY_FOR_SELECTION"
+    | "ASSESSING"
+    | "COMPLETE"
+    | "FAILED";
   createdAt: string;
   sourceFiles: SourceFile[];
   sourceNotices: string[];
@@ -74,16 +80,24 @@ export async function runSessionResearch(
   const session = sessions.get(id);
   if (!session) return undefined;
   session.status = "RESEARCHING";
-  const result = await runOpenSourceResearch(
-    session.prompt,
-    connectorIds,
-    maxResults,
-  );
-  session.sourceFiles = result.files;
-  session.sourceNotices = result.notices;
-  session.status = "READY_FOR_SELECTION";
-  session.assessment = null;
-  return session;
+  try {
+    const result = await runOpenSourceResearch(
+      session.prompt,
+      connectorIds,
+      maxResults,
+    );
+    session.sourceFiles = result.files;
+    session.sourceNotices = result.notices;
+    session.status = result.files.length > 0 ? "READY_FOR_SELECTION" : "FAILED";
+    session.assessment = null;
+    return session;
+  } catch (error) {
+    session.status = "FAILED";
+    session.sourceNotices = [
+      error instanceof Error ? error.message : "Unexpected research failure",
+    ];
+    throw error;
+  }
 }
 
 export function assessSession(id: string, selectedSourceFileIds: string[]) {

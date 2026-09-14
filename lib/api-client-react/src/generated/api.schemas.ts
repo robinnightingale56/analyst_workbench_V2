@@ -24,7 +24,10 @@ export const AnalysisSessionInputClassification = {
 } as const;
 
 export interface AnalysisSessionInput {
-  /** @minLength 5 */
+  /**
+     * @minLength 5
+     * @maxLength 500
+     */
   prompt: string;
   analyst?: string;
   classification?: AnalysisSessionInputClassification;
@@ -62,6 +65,7 @@ export const AnalysisSessionStatus = {
   READY_FOR_SELECTION: 'READY_FOR_SELECTION',
   ASSESSING: 'ASSESSING',
   COMPLETE: 'COMPLETE',
+  FAILED: 'FAILED',
 } as const;
 
 export type SourceFileSourceType = typeof SourceFileSourceType[keyof typeof SourceFileSourceType];
@@ -175,6 +179,7 @@ export interface HistoricalRating {
      */
   score: number;
   summary: string;
+  placeholder: boolean;
 }
 
 export type TrendAnalysisDirection = typeof TrendAnalysisDirection[keyof typeof TrendAnalysisDirection];
@@ -237,6 +242,8 @@ export interface Assessment {
   vectorResults: EvaluationVectorResult[];
   historicalRatings: HistoricalRating[];
   trendAnalysis: TrendAnalysis;
+  provisional: boolean;
+  methodology: string;
 }
 
 export interface AnalysisSession {

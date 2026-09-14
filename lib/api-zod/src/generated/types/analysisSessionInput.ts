@@ -8,7 +8,10 @@
 import type { AnalysisSessionInputClassification } from './analysisSessionInputClassification';
 
 export interface AnalysisSessionInput {
-  /** @minLength 5 */
+  /**
+     * @minLength 5
+     * @maxLength 500
+     */
   prompt: string;
   analyst?: string;
   classification?: AnalysisSessionInputClassification;

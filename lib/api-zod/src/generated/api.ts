@@ -45,7 +45,7 @@ export const ListAnalysisSessionsResponseItem = zod.object({
   "prompt": zod.string(),
   "analyst": zod.string(),
   "classification": zod.enum(['UNCLASSIFIED', 'CUI', 'SECRET', 'TS']),
-  "status": zod.enum(['DRAFT', 'RESEARCHING', 'READY_FOR_SELECTION', 'ASSESSING', 'COMPLETE']),
+  "status": zod.enum(['DRAFT', 'RESEARCHING', 'READY_FOR_SELECTION', 'ASSESSING', 'COMPLETE', 'FAILED']),
   "createdAt": zod.string(),
   "sourceFiles": zod.array(zod.object({
   "id": zod.string(),
@@ -90,7 +90,8 @@ export const ListAnalysisSessionsResponseItem = zod.object({
   "year": zod.number().int(),
   "rating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
   "score": zod.number().min(listAnalysisSessionsResponseAssessmentOneHistoricalRatingsItemScoreMin).max(listAnalysisSessionsResponseAssessmentOneHistoricalRatingsItemScoreMax),
-  "summary": zod.string()
+  "summary": zod.string(),
+  "placeholder": zod.boolean()
 })),
   "trendAnalysis": zod.object({
   "direction": zod.enum(['DOWN', 'SAME', 'UP']),
@@ -99,7 +100,9 @@ export const ListAnalysisSessionsResponseItem = zod.object({
   "confidence": zod.enum(['LOW', 'MODERATE', 'HIGH']),
   "rationale": zod.string(),
   "drivers": zod.array(zod.string())
-})
+}),
+  "provisional": zod.boolean(),
+  "methodology": zod.string()
 }),zod.null()])
 })
 export const ListAnalysisSessionsResponse = zod.array(ListAnalysisSessionsResponseItem)
@@ -109,11 +112,12 @@ export const ListAnalysisSessionsResponse = zod.array(ListAnalysisSessionsRespon
  * @summary Create an analyst research session
  */
 export const createAnalysisSessionBodyPromptMin = 5;
+export const createAnalysisSessionBodyPromptMax = 500;
 
 
 
 export const CreateAnalysisSessionBody = zod.object({
-  "prompt": zod.string().min(createAnalysisSessionBodyPromptMin),
+  "prompt": zod.string().min(createAnalysisSessionBodyPromptMin).max(createAnalysisSessionBodyPromptMax),
   "analyst": zod.string().optional(),
   "classification": zod.enum(['UNCLASSIFIED', 'CUI', 'SECRET', 'TS']).optional()
 })
@@ -143,7 +147,7 @@ export const CreateAnalysisSessionResponse = zod.object({
   "prompt": zod.string(),
   "analyst": zod.string(),
   "classification": zod.enum(['UNCLASSIFIED', 'CUI', 'SECRET', 'TS']),
-  "status": zod.enum(['DRAFT', 'RESEARCHING', 'READY_FOR_SELECTION', 'ASSESSING', 'COMPLETE']),
+  "status": zod.enum(['DRAFT', 'RESEARCHING', 'READY_FOR_SELECTION', 'ASSESSING', 'COMPLETE', 'FAILED']),
   "createdAt": zod.string(),
   "sourceFiles": zod.array(zod.object({
   "id": zod.string(),
@@ -188,7 +192,8 @@ export const CreateAnalysisSessionResponse = zod.object({
   "year": zod.number().int(),
   "rating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
   "score": zod.number().min(createAnalysisSessionResponseAssessmentOneHistoricalRatingsItemScoreMin).max(createAnalysisSessionResponseAssessmentOneHistoricalRatingsItemScoreMax),
-  "summary": zod.string()
+  "summary": zod.string(),
+  "placeholder": zod.boolean()
 })),
   "trendAnalysis": zod.object({
   "direction": zod.enum(['DOWN', 'SAME', 'UP']),
@@ -197,7 +202,9 @@ export const CreateAnalysisSessionResponse = zod.object({
   "confidence": zod.enum(['LOW', 'MODERATE', 'HIGH']),
   "rationale": zod.string(),
   "drivers": zod.array(zod.string())
-})
+}),
+  "provisional": zod.boolean(),
+  "methodology": zod.string()
 }),zod.null()])
 })
 
@@ -234,7 +241,7 @@ export const GetAnalysisSessionResponse = zod.object({
   "prompt": zod.string(),
   "analyst": zod.string(),
   "classification": zod.enum(['UNCLASSIFIED', 'CUI', 'SECRET', 'TS']),
-  "status": zod.enum(['DRAFT', 'RESEARCHING', 'READY_FOR_SELECTION', 'ASSESSING', 'COMPLETE']),
+  "status": zod.enum(['DRAFT', 'RESEARCHING', 'READY_FOR_SELECTION', 'ASSESSING', 'COMPLETE', 'FAILED']),
   "createdAt": zod.string(),
   "sourceFiles": zod.array(zod.object({
   "id": zod.string(),
@@ -279,7 +286,8 @@ export const GetAnalysisSessionResponse = zod.object({
   "year": zod.number().int(),
   "rating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
   "score": zod.number().min(getAnalysisSessionResponseAssessmentOneHistoricalRatingsItemScoreMin).max(getAnalysisSessionResponseAssessmentOneHistoricalRatingsItemScoreMax),
-  "summary": zod.string()
+  "summary": zod.string(),
+  "placeholder": zod.boolean()
 })),
   "trendAnalysis": zod.object({
   "direction": zod.enum(['DOWN', 'SAME', 'UP']),
@@ -288,7 +296,9 @@ export const GetAnalysisSessionResponse = zod.object({
   "confidence": zod.enum(['LOW', 'MODERATE', 'HIGH']),
   "rationale": zod.string(),
   "drivers": zod.array(zod.string())
-})
+}),
+  "provisional": zod.boolean(),
+  "methodology": zod.string()
 }),zod.null()])
 })
 
@@ -334,7 +344,7 @@ export const RunResearchResponse = zod.object({
   "prompt": zod.string(),
   "analyst": zod.string(),
   "classification": zod.enum(['UNCLASSIFIED', 'CUI', 'SECRET', 'TS']),
-  "status": zod.enum(['DRAFT', 'RESEARCHING', 'READY_FOR_SELECTION', 'ASSESSING', 'COMPLETE']),
+  "status": zod.enum(['DRAFT', 'RESEARCHING', 'READY_FOR_SELECTION', 'ASSESSING', 'COMPLETE', 'FAILED']),
   "createdAt": zod.string(),
   "sourceFiles": zod.array(zod.object({
   "id": zod.string(),
@@ -379,7 +389,8 @@ export const RunResearchResponse = zod.object({
   "year": zod.number().int(),
   "rating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
   "score": zod.number().min(runResearchResponseAssessmentOneHistoricalRatingsItemScoreMin).max(runResearchResponseAssessmentOneHistoricalRatingsItemScoreMax),
-  "summary": zod.string()
+  "summary": zod.string(),
+  "placeholder": zod.boolean()
 })),
   "trendAnalysis": zod.object({
   "direction": zod.enum(['DOWN', 'SAME', 'UP']),
@@ -388,7 +399,9 @@ export const RunResearchResponse = zod.object({
   "confidence": zod.enum(['LOW', 'MODERATE', 'HIGH']),
   "rationale": zod.string(),
   "drivers": zod.array(zod.string())
-})
+}),
+  "provisional": zod.boolean(),
+  "methodology": zod.string()
 }),zod.null()])
 })
 
@@ -429,7 +442,7 @@ export const CreateAssessmentResponse = zod.object({
   "prompt": zod.string(),
   "analyst": zod.string(),
   "classification": zod.enum(['UNCLASSIFIED', 'CUI', 'SECRET', 'TS']),
-  "status": zod.enum(['DRAFT', 'RESEARCHING', 'READY_FOR_SELECTION', 'ASSESSING', 'COMPLETE']),
+  "status": zod.enum(['DRAFT', 'RESEARCHING', 'READY_FOR_SELECTION', 'ASSESSING', 'COMPLETE', 'FAILED']),
   "createdAt": zod.string(),
   "sourceFiles": zod.array(zod.object({
   "id": zod.string(),
@@ -474,7 +487,8 @@ export const CreateAssessmentResponse = zod.object({
   "year": zod.number().int(),
   "rating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
   "score": zod.number().min(createAssessmentResponseAssessmentOneHistoricalRatingsItemScoreMin).max(createAssessmentResponseAssessmentOneHistoricalRatingsItemScoreMax),
-  "summary": zod.string()
+  "summary": zod.string(),
+  "placeholder": zod.boolean()
 })),
   "trendAnalysis": zod.object({
   "direction": zod.enum(['DOWN', 'SAME', 'UP']),
@@ -483,7 +497,9 @@ export const CreateAssessmentResponse = zod.object({
   "confidence": zod.enum(['LOW', 'MODERATE', 'HIGH']),
   "rationale": zod.string(),
   "drivers": zod.array(zod.string())
-})
+}),
+  "provisional": zod.boolean(),
+  "methodology": zod.string()
 }),zod.null()])
 })
 
@@ -532,7 +548,8 @@ export const ListHistoricalRatingsResponseItem = zod.object({
   "year": zod.number().int(),
   "rating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
   "score": zod.number().min(listHistoricalRatingsResponseScoreMin).max(listHistoricalRatingsResponseScoreMax),
-  "summary": zod.string()
+  "summary": zod.string(),
+  "placeholder": zod.boolean()
 })
 export const ListHistoricalRatingsResponse = zod.array(ListHistoricalRatingsResponseItem)
 

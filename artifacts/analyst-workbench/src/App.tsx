@@ -136,7 +136,7 @@ function AppShell({ children }: { children: ReactNode }) {
       <div className="mt-auto px-4 pb-5">
         <div className="mb-4 border border-sidebar-border bg-sidebar-accent/50 p-3">
           <div className="flex items-center gap-2"><span className="h-1.5 w-1.5 bg-[hsl(174_55%_55%)]" /><span className="mono text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/80">Environment nominal</span></div>
-          <p className="mt-2 text-xs leading-5 text-sidebar-foreground/55">Classification controls are enforced per session.</p>
+          <p className="mt-2 text-xs leading-5 text-sidebar-foreground/55">Classification is tracked per session for organizational purposes.</p>
         </div>
         <div className="flex items-center gap-3 border-t border-sidebar-border pt-4"><div className="grid h-8 w-8 place-items-center rounded-full bg-[hsl(39_92%_65%_/_0.2)] mono text-xs font-medium text-sidebar-primary">AR</div><div><div className="text-xs font-semibold text-white">A. Reyes</div><div className="mono text-[10px] text-sidebar-foreground/50">All-source analyst</div></div><button onClick={() => setLocation('/settings')} className="ml-auto text-sidebar-foreground/50 hover:text-white" data-testid="button-profile-settings" aria-label="Open settings"><Settings2 size={15} /></button></div>
       </div>
@@ -152,18 +152,31 @@ function AppShell({ children }: { children: ReactNode }) {
   </div>;
 }
 
-function ConnectorPicker({ connectors, selected, setSelected, loading, error }: { connectors?: SourceConnector[]; selected: string[]; setSelected: (ids: string[]) => void; loading: boolean; error: boolean }) {
+function ConnectorPicker({ connectors, selected, setSelected, loading, error, classification }: { connectors?: SourceConnector[]; selected: string[]; setSelected: (ids: string[]) => void; loading: boolean; error: boolean; classification: keyof typeof AnalysisSessionClassification }) {
   if (loading) return <div className="grid gap-2 md:grid-cols-2"><div className="h-[72px] animate-pulse bg-muted" /><div className="h-[72px] animate-pulse bg-muted" /></div>;
   if (error) return <div className="flex items-start gap-3 border border-[hsl(5_69%_48%_/_0.25)] bg-[hsl(5_69%_48%_/_0.06)] p-4 text-sm" data-testid="error-connectors"><CircleAlert size={17} className="mt-0.5 text-[hsl(5_69%_48%)]" /><div><div className="font-semibold text-foreground">Connector registry unavailable</div><p className="mt-1 text-muted-foreground">Research cannot be run until source readiness can be verified.</p></div></div>;
   if (!connectors?.length) return <EmptyState icon={Network} title="No source adapters configured" detail="Ask a workspace administrator to configure at least one connector before running research." />;
-  return <div className="grid gap-2 md:grid-cols-2" data-testid="connector-list">{connectors.map((connector) => {
-    const ready = connector.status === SourceConnectorStatus.READY;
-    const active = selected.includes(connector.id);
-    const isLive = connector.mode === 'LIVE';
-    return <button type="button" disabled={!ready} key={connector.id} onClick={() => setSelected(active ? selected.filter((id) => id !== connector.id) : [...selected, connector.id])} className={`flex items-start gap-3 border p-3 text-left transition-all ${active ? 'border-[hsl(39_92%_65%)] bg-[hsl(39_92%_65%_/_0.1)]' : 'border-border bg-card hover:border-[hsl(39_92%_65%_/_0.65)]'} ${!ready ? 'cursor-not-allowed opacity-55' : ''}`} data-testid={`button-connector-${connector.id}`}>
-      <span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center border ${active ? 'border-primary bg-primary text-primary-foreground' : 'border-input bg-background'}`}>{active ? <Check size={11} /> : null}</span><span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-2"><span className="text-sm font-semibold text-foreground flex items-center gap-2">{connector.name} {isLive ? <span className="inline-flex items-center border border-[hsl(174_44%_43%_/_0.4)] bg-[hsl(174_44%_43%_/_0.1)] px-1.5 py-0.5 text-[9px] font-semibold tracking-[0.08em] text-[hsl(174_44%_32%)]">LIVE</span> : <span className="inline-flex items-center border border-[hsl(39_92%_65%_/_0.4)] bg-[hsl(39_92%_65%_/_0.1)] px-1.5 py-0.5 text-[9px] font-semibold tracking-[0.08em] text-[hsl(30_69%_32%)]">SYNTHETIC</span>}</span><StatusPill status={connector.status} /></span><span className="mt-1 block text-xs leading-5 text-muted-foreground">{connector.description}</span><span className="mono mt-2 block text-[9px] uppercase tracking-[0.08em] text-muted-foreground/80">{connector.sourceTypes.join(' / ')}</span></span>
-    </button>;
-  })}</div>;
+  
+  const isRestricted = classification !== 'UNCLASSIFIED';
+
+  return <div className="flex flex-col gap-3">
+    {isRestricted && (
+      <div className="flex items-start gap-2 border-l-2 border-[hsl(39_92%_65%)] bg-[hsl(39_92%_65%_/_0.1)] px-3 py-2 text-xs text-muted-foreground">
+        <LockKeyhole size={14} className="mt-0.5 shrink-0 text-[hsl(30_69%_32%)]" />
+        <p>Live research is disabled for {classification}. No prompts or queries will be sent to public providers. Only synthetic demonstration adapters are available.</p>
+      </div>
+    )}
+    <div className="grid gap-2 md:grid-cols-2" data-testid="connector-list">{connectors.map((connector) => {
+      const isLive = connector.mode === 'LIVE';
+      const isDisabledByClassification = isRestricted && isLive;
+      const ready = connector.status === SourceConnectorStatus.READY && !isDisabledByClassification;
+      const active = selected.includes(connector.id);
+      
+      return <button type="button" disabled={!ready} key={connector.id} onClick={() => setSelected(active ? selected.filter((id) => id !== connector.id) : [...selected, connector.id])} className={`flex items-start gap-3 border p-3 text-left transition-all ${active ? 'border-[hsl(39_92%_65%)] bg-[hsl(39_92%_65%_/_0.1)]' : 'border-border bg-card hover:border-[hsl(39_92%_65%_/_0.65)]'} ${!ready ? 'cursor-not-allowed opacity-55' : ''}`} data-testid={`button-connector-${connector.id}`}>
+        <span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center border ${active ? 'border-primary bg-primary text-primary-foreground' : 'border-input bg-background'}`}>{active ? <Check size={11} /> : null}</span><span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-2"><span className="text-sm font-semibold text-foreground flex items-center gap-2">{connector.name} {isLive ? <span className="inline-flex items-center border border-[hsl(174_44%_43%_/_0.4)] bg-[hsl(174_44%_43%_/_0.1)] px-1.5 py-0.5 text-[9px] font-semibold tracking-[0.08em] text-[hsl(174_44%_32%)]">LIVE</span> : <span className="inline-flex items-center border border-[hsl(39_92%_65%_/_0.4)] bg-[hsl(39_92%_65%_/_0.1)] px-1.5 py-0.5 text-[9px] font-semibold tracking-[0.08em] text-[hsl(30_69%_32%)]">SYNTHETIC</span>}</span><StatusPill status={connector.status} /></span><span className="mt-1 block text-xs leading-5 text-muted-foreground">{connector.description}</span><span className="mono mt-2 block text-[9px] uppercase tracking-[0.08em] text-muted-foreground/80">{connector.sourceTypes.join(' / ')}</span></span>
+      </button>;
+    })}</div>
+  </div>;
 }
 
 function SourceCard({ source, selected, onToggle }: { source: SourceFile; selected: boolean; onToggle: () => void }) {
@@ -233,17 +246,17 @@ function Home() {
   };
   const isBusy = createSession.isPending || runResearch.isPending || createAssessment.isPending;
   return <div className="space-y-8">
-    <div className="rise flex flex-col justify-between gap-5 lg:flex-row lg:items-end"><div><div className="section-kicker">Active production cell / {session ? `Session ${session.id.slice(0, 8)}` : 'New session'}</div><h1 className="display mt-2 max-w-3xl text-3xl font-bold tracking-[-0.03em] text-foreground md:text-[40px]">Turn a research question into a defensible assessment.</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">Build provenance into the workflow. Every judgment starts with a bounded question, a declared source posture, and visible uncertainty.</p></div><div className="flex items-center gap-2 border border-border bg-card px-3 py-2 text-xs text-muted-foreground"><ShieldCheck size={15} className="text-[hsl(174_44%_43%)]" /><span>ICD-203 aligned workflow</span></div></div>
+    <div className="rise flex flex-col justify-between gap-5 lg:flex-row lg:items-end"><div><div className="section-kicker">Active production cell / {session ? `Session ${session.id.slice(0, 8)}` : 'New session'}</div><h1 className="display mt-2 max-w-3xl text-3xl font-bold tracking-[-0.03em] text-foreground md:text-[40px]">Draft a provisional assessment from a research question.</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">Trace the research workflow. Every drafted judgment starts with a bounded question, a declared source posture, and visible uncertainty.</p></div><div className="flex items-center gap-2 border border-border bg-card px-3 py-2 text-xs text-muted-foreground"><ShieldCheck size={15} className="text-[hsl(174_44%_43%)]" /><span>Supports ICD-203 review</span></div></div>
     <section className="scanline panel-shadow border border-card-border bg-card" data-testid="panel-research-question">
       <div className="flex items-center justify-between border-b border-border/75 px-5 py-4 md:px-6"><div className="flex items-center gap-3"><span className="mono grid h-6 w-6 place-items-center bg-primary text-[10px] text-primary-foreground">01</span><div><div className="text-sm font-semibold">Frame the question</div><div className="text-xs text-muted-foreground">Define the decision space before you collect.</div></div></div><StatusPill status={session?.status ?? 'DRAFT'} /></div>
-      <div className="grid gap-6 p-5 md:p-6 lg:grid-cols-[1.25fr_0.75fr]"><div><label htmlFor="research-prompt" className="section-kicker">Intelligence question</label><textarea id="research-prompt" rows={4} value={prompt || session?.prompt || ''} onChange={(event) => setPrompt(event.target.value)} placeholder="What do you need to know, and by when?" className="mt-2 w-full resize-none border border-input bg-background px-4 py-3 text-sm leading-6 text-foreground placeholder:text-muted-foreground/70 focus:border-primary" data-testid="input-research-prompt" /><div className="mt-3 flex flex-wrap items-center gap-3"><label className="mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground" htmlFor="classification">Classification</label><select id="classification" value={classification} onChange={(event) => setClassification(event.target.value as keyof typeof AnalysisSessionClassification)} className="border border-input bg-background px-2.5 py-1.5 text-xs text-foreground" data-testid="select-classification">{Object.values(AnalysisSessionClassification).map((value) => <option key={value} value={value}>{value}</option>)}</select><span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"><LockKeyhole size={12} /> Applied to the session record</span></div><button onClick={startSession} disabled={isBusy} className="mt-5 inline-flex items-center gap-2 bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-create-session">{createSession.isPending ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}{session ? 'Reset with new question' : 'Create analysis session'}</button></div><div className="border-l border-border/70 pl-0 lg:pl-6"><div className="section-kicker">Source posture</div><p className="mt-2 text-xs leading-5 text-muted-foreground">Only adapters marked ready can be selected. Unavailable sources remain visible as a readiness signal.</p><div className="mt-4"><ConnectorPicker connectors={connectorsQuery.data} selected={selectedConnectors} setSelected={setSelectedConnectors} loading={connectorsQuery.isLoading} error={Boolean(connectorsQuery.error)} /></div></div></div>
+      <div className="grid gap-6 p-5 md:p-6 lg:grid-cols-[1.25fr_0.75fr]"><div><label htmlFor="research-prompt" className="section-kicker">Intelligence question</label><textarea id="research-prompt" rows={4} value={prompt || session?.prompt || ''} onChange={(event) => setPrompt(event.target.value)} placeholder="What do you need to know, and by when?" className="mt-2 w-full resize-none border border-input bg-background px-4 py-3 text-sm leading-6 text-foreground placeholder:text-muted-foreground/70 focus:border-primary" data-testid="input-research-prompt" /><div className="mt-3 flex flex-wrap items-center gap-3"><label className="mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground" htmlFor="classification">Classification</label><select id="classification" value={classification} onChange={(event) => setClassification(event.target.value as keyof typeof AnalysisSessionClassification)} className="border border-input bg-background px-2.5 py-1.5 text-xs text-foreground" data-testid="select-classification">{Object.values(AnalysisSessionClassification).map((value) => <option key={value} value={value}>{value}</option>)}</select><span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"><LockKeyhole size={12} /> Applied to the session record</span></div><button onClick={startSession} disabled={isBusy} className="mt-5 inline-flex items-center gap-2 bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-create-session">{createSession.isPending ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}{session ? 'Reset with new question' : 'Create analysis session'}</button></div><div className="border-l border-border/70 pl-0 lg:pl-6"><div className="section-kicker">Source posture</div><p className="mt-2 text-xs leading-5 text-muted-foreground">Only adapters marked ready can be selected. Unavailable sources remain visible as a readiness signal.</p><div className="mt-4"><ConnectorPicker connectors={connectorsQuery.data} selected={selectedConnectors} setSelected={setSelectedConnectors} loading={connectorsQuery.isLoading} error={Boolean(connectorsQuery.error)} classification={classification} /></div></div></div>
       {actionError ? <div className="flex items-center gap-2 border-t border-[hsl(5_69%_48%_/_0.22)] bg-[hsl(5_69%_48%_/_0.05)] px-5 py-3 text-xs text-[hsl(5_69%_40%)]" data-testid="error-workbench-action"><CircleAlert size={14} />{actionError}<button className="ml-auto" onClick={() => setActionError('')} aria-label="Dismiss error" data-testid="button-dismiss-error"><X size={14} /></button></div> : null}
     </section>
     <section className="rise rise-delay-1" data-testid="panel-research-results">
       <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
         <div>
           <div className="section-kicker">02 / Source review</div>
-          <h2 className="display mt-1 text-2xl font-bold tracking-tight">BLUF evidence board</h2>
+          <h2 className="display mt-1 text-2xl font-bold tracking-tight">BLUF source board</h2>
         </div>
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
           <span className="mono">{selectedSources.length} selected</span>
@@ -269,8 +282,8 @@ function Home() {
       ) : (
         <EmptyState 
           icon={Radio} 
-          title={session?.sourceNotices?.length ? "Research returned no results" : "No source-backed findings yet"} 
-          detail={session ? (session.sourceNotices?.length ? "The selected providers failed to return any valid sources for this query. See provider notices above." : 'Run research with one or more ready adapters. Results will appear here with BLUF summaries, provenance, and reliability signals.') : 'Create an analysis session to unlock the evidence board.'} 
+          title={session?.sourceNotices?.length ? "Research returned no results" : "No retrieved findings yet"} 
+          detail={session ? (session.sourceNotices?.length ? "The selected providers failed to return any valid sources for this query. See provider notices above." : 'Run research with one or more ready adapters. Results will appear here with BLUF summaries, source metadata, and reliability signals.') : 'Create an analysis session to unlock the source board.'} 
           action={!session ? <button onClick={() => document.getElementById('research-prompt')?.focus()} className="inline-flex items-center gap-2 border border-border bg-card px-3 py-2 text-xs font-semibold hover:border-primary" data-testid="button-focus-question"><Target size={14} />Focus the question</button> : undefined} 
         />
       )}
@@ -286,8 +299,8 @@ function AssessmentSummary({ assessment }: { assessment: NonNullable<AnalysisSes
   return <section className="rise border border-[hsl(174_44%_43%_/_0.35)] bg-[hsl(174_44%_43%_/_0.06)] p-5 md:p-6" data-testid="panel-assessment-summary">
     <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
       <div>
-        <div className="section-kicker text-[hsl(174_44%_32%)]">Assessment complete</div>
-        <h2 className="display mt-1 text-2xl font-bold">A defensible judgment, ready for review.</h2>
+        <div className="section-kicker text-[hsl(174_44%_32%)]">{assessment.provisional ? "Provisional Assessment Complete" : "Assessment complete"}</div>
+        <h2 className="display mt-1 text-2xl font-bold">A drafted judgment, ready for review.</h2>
       </div>
       <div className="flex items-end gap-2">
         <span className="display text-4xl font-bold text-[hsl(174_44%_32%)]">{assessment.overallScore}</span>
@@ -295,11 +308,20 @@ function AssessmentSummary({ assessment }: { assessment: NonNullable<AnalysisSes
       </div>
     </div>
     <p className="mt-4 max-w-3xl text-sm leading-6 text-foreground/80">{assessment.summary}</p>
+    
+    {assessment.methodology && (
+      <div className="mt-4 border-l-2 border-[hsl(174_44%_43%_/_0.5)] pl-3 text-xs italic leading-5 text-muted-foreground max-w-3xl">
+        <span className="font-semibold not-italic">Methodology:</span> {assessment.methodology}
+      </div>
+    )}
 
     {assessment.trendAnalysis ? (
       <div className="mt-6 flex flex-col gap-4 lg:flex-row">
         <div className="flex flex-1 flex-col border border-[hsl(220_18%_86%)] bg-card p-5 shadow-sm">
-          <div className="section-kicker">Trend analysis & recommendation</div>
+          <div className="flex items-center justify-between">
+            <div className="section-kicker">Trend analysis & recommendation</div>
+            <span className="inline-flex items-center border border-[hsl(39_92%_65%_/_0.4)] bg-[hsl(39_92%_65%_/_0.1)] px-2 py-0.5 text-[9px] font-semibold tracking-[0.08em] text-[hsl(30_69%_32%)] uppercase">Provisional POC Signal</span>
+          </div>
           <div className="mt-4 flex items-center gap-6">
             <div className="flex flex-col">
               <span className="mono text-[10px] uppercase tracking-[0.05em] text-muted-foreground">Prior year</span>
@@ -331,6 +353,7 @@ function AssessmentSummary({ assessment }: { assessment: NonNullable<AnalysisSes
               )}
             </div>
           </div>
+          <div className="mt-2 text-xs italic text-muted-foreground">Requires analyst approval</div>
           <div className="mt-5 flex items-center gap-2 text-sm text-foreground/80">
             <span className="font-semibold">Confidence:</span>
             <StatusPill status={assessment.trendAnalysis.confidence} />
@@ -358,7 +381,10 @@ function AssessmentSummary({ assessment }: { assessment: NonNullable<AnalysisSes
                 <div key={hr.year} className="p-4 px-5">
                   <div className="flex items-center justify-between">
                     <span className="mono text-sm font-bold text-foreground">{hr.year}</span>
-                    <StatusPill status={hr.rating} />
+                    <div className="flex items-center gap-2">
+                      {hr.placeholder && <span className="mono text-[9px] uppercase tracking-[0.08em] text-[hsl(30_69%_32%)] font-semibold">Stand-in history</span>}
+                      <StatusPill status={hr.rating} />
+                    </div>
                   </div>
                   <div className="mt-2 text-xs leading-5 text-muted-foreground">{hr.summary}</div>
                 </div>

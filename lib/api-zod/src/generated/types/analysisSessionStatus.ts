@@ -15,4 +15,5 @@ export const AnalysisSessionStatus = {
   READY_FOR_SELECTION: 'READY_FOR_SELECTION',
   ASSESSING: 'ASSESSING',
   COMPLETE: 'COMPLETE',
+  FAILED: 'FAILED',
 } as const;

@@ -16,4 +16,5 @@ export interface HistoricalRating {
      */
   score: number;
   summary: string;
+  placeholder: boolean;
 }

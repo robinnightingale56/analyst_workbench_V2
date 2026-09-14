@@ -30,6 +30,7 @@ A secure research and assessment workspace that turns analyst questions into sou
 ## Architecture decisions
 
 - External retrieval is isolated behind server-side source adapters; browser code never handles provider credentials.
+- Public web adapters are hard-blocked for sessions above UNCLASSIFIED; restricted prompts must never be sent to public providers.
 - Demonstration research is labeled as such and must not be represented as live-source reporting.
 - Classification markings are metadata and workflow controls only; this development environment is not approved to hold classified information.
 - The ICD-203 assessment provides structured analyst support, not an automated substitute for analytic review or release authority.
@@ -38,8 +39,10 @@ A secure research and assessment workspace that turns analyst questions into sou
 
 - Create an analysis session from an intelligence question.
 - Select approved source adapters and run a research request.
+- Query live proof-of-concept sources through Google News RSS, the Federal Register API, and Crossref.
 - Review source provenance, reliability, relevance, key points, and BLUF cards.
 - Select evidence and assess it against nine ICD-203 analytic tradecraft standards.
+- Grade against six stand-in vectors and compare with placeholder historical ratings to produce a provisional up/same/down trend signal.
 - Review session history, standards guidance, connector readiness, and API health.
 
 ## User preferences
@@ -49,6 +52,8 @@ _Populate as you build — explicit user instructions worth remembering across s
 ## Gotchas
 
 - Current retrieval output is demonstration data until an approved live source connector is configured.
+- Live proof-of-concept sources are public and may be unavailable, rate-limited, incomplete, biased, or unsuitable for final judgments.
+- Vector scores and trend recommendations are provisional metadata heuristics until full report content is evaluated against an approved rubric.
 - Never log prompt text, source content, credentials, or classification-sensitive metadata in production.
 
 ## Pointers

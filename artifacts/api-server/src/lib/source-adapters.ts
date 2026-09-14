@@ -49,6 +49,10 @@ export const sourceConnectors = [
   },
 ] as const;
 
+export function isKnownSourceConnector(id: string) {
+  return sourceConnectors.some((connector) => connector.id === id);
+}
+
 type AdapterResult = {
   files: SourceFile[];
   notices: string[];
@@ -84,7 +88,19 @@ async function fetchJson<T>(url: URL): Promise<T> {
   if (!response.ok) {
     throw new Error(`provider returned ${response.status}`);
   }
-  return (await response.json()) as T;
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("json")) {
+    throw new Error("provider returned an unexpected content type");
+  }
+  const contentLength = Number(response.headers.get("content-length") ?? "0");
+  if (contentLength > 5_000_000) {
+    throw new Error("provider response exceeded the 5 MB limit");
+  }
+  const text = await response.text();
+  if (text.length > 5_000_000) {
+    throw new Error("provider response exceeded the 5 MB limit");
+  }
+  return JSON.parse(text) as T;
 }
 
 async function fetchText(url: URL): Promise<string> {
@@ -98,7 +114,15 @@ async function fetchText(url: URL): Promise<string> {
   if (!response.ok) {
     throw new Error(`provider returned ${response.status}`);
   }
-  return response.text();
+  const contentLength = Number(response.headers.get("content-length") ?? "0");
+  if (contentLength > 5_000_000) {
+    throw new Error("provider response exceeded the 5 MB limit");
+  }
+  const text = await response.text();
+  if (text.length > 5_000_000) {
+    throw new Error("provider response exceeded the 5 MB limit");
+  }
+  return text;
 }
 
 function rssValue(item: string, tag: string) {
@@ -287,6 +311,10 @@ export async function runOpenSourceResearch(
   connectorIds: string[],
   maxResults = 12,
 ): Promise<AdapterResult> {
+  const unknown = connectorIds.filter((id) => !isKnownSourceConnector(id));
+  if (unknown.length > 0) {
+    throw new Error(`Unknown source connector: ${unknown.join(", ")}`);
+  }
   const selected = new Set(connectorIds);
   const liveAdapters = [
     { id: "google-news-rss", name: "Google News", run: searchGoogleNews },

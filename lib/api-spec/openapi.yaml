@@ -190,6 +190,7 @@ components:
         prompt:
           type: string
           minLength: 5
+          maxLength: 500
         analyst:
           type: string
         classification:
@@ -239,7 +240,7 @@ components:
           enum: [UNCLASSIFIED, CUI, SECRET, TS]
         status:
           type: string
-          enum: [DRAFT, RESEARCHING, READY_FOR_SELECTION, ASSESSING, COMPLETE]
+          enum: [DRAFT, RESEARCHING, READY_FOR_SELECTION, ASSESSING, COMPLETE, FAILED]
         createdAt:
           type: string
         sourceFiles:
@@ -336,6 +337,8 @@ components:
         - vectorResults
         - historicalRatings
         - trendAnalysis
+        - provisional
+        - methodology
         - summary
       properties:
         id:
@@ -364,6 +367,10 @@ components:
             $ref: "#/components/schemas/HistoricalRating"
         trendAnalysis:
           $ref: "#/components/schemas/TrendAnalysis"
+        provisional:
+          type: boolean
+        methodology:
+          type: string
     AnalyticStandard:
       type: object
       required: [id, name, shortName, score, status, finding, prompt]
@@ -428,7 +435,7 @@ components:
             type: string
     HistoricalRating:
       type: object
-      required: [year, rating, score, summary]
+      required: [year, rating, score, summary, placeholder]
       properties:
         year:
           type: integer
@@ -441,6 +448,8 @@ components:
           maximum: 100
         summary:
           type: string
+        placeholder:
+          type: boolean
     TrendAnalysis:
       type: object
       required:

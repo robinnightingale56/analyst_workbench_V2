@@ -23,4 +23,6 @@ export interface Assessment {
   vectorResults: EvaluationVectorResult[];
   historicalRatings: HistoricalRating[];
   trendAnalysis: TrendAnalysis;
+  provisional: boolean;
+  methodology: string;
 }
