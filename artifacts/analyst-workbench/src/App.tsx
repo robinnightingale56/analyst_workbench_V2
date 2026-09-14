@@ -45,6 +45,7 @@ import {
   useListHistoricalRatings,
   useRunResearch,
   useUpdateIncidentReview,
+  getAnalysisSession,
   getGetAnalysisSessionQueryKey,
   type AnalysisSession,
   type AnalyticStandard,
@@ -322,15 +323,50 @@ function CountAnswerReview({ session, onUpdated }: { session: AnalysisSession; o
   const [incidents, setIncidents] = useState<Incident[]>(answer.incidents);
   const [showAdd, setShowAdd] = useState(false);
   const [draft, setDraft] = useState({ date: '', location: '', description: '', sourceFileId: '' });
+  const [saveError, setSaveError] = useState<'conflict' | 'generic' | ''>('');
+  const [confirmReload, setConfirmReload] = useState(false);
+  const [isReloading, setIsReloading] = useState(false);
   const updateReview = useUpdateIncidentReview();
-  useEffect(() => setIncidents(answer.incidents), [answer.incidents]);
+  useEffect(() => {
+    setIncidents(answer.incidents);
+    setSaveError('');
+    setConfirmReload(false);
+  }, [answer.incidents]);
   const includedCount = incidents.filter((incident) => incident.status === 'INCLUDED').length;
   const hasUncitedIncludedIncident = incidents.some((incident) => incident.status === 'INCLUDED' && incident.sourceFileIds.length === 0);
   const hasSupportedAnswer = includedCount > 0;
-  const save = (finalized: boolean) => updateReview.mutate(
-    { sessionId: session.id, data: { incidents, finalized, expectedVersion: session.version } },
-    { onSuccess: onUpdated },
-  );
+  const save = (finalized: boolean) => {
+    setSaveError('');
+    setConfirmReload(false);
+    updateReview.mutate(
+      { sessionId: session.id, data: { incidents, finalized, expectedVersion: session.version } },
+      {
+        onSuccess: onUpdated,
+        onError: (error) => setSaveError(
+          typeof error === 'object' && error !== null && 'status' in error && error.status === 409
+            ? 'conflict'
+            : 'generic',
+        ),
+      },
+    );
+  };
+  const reloadCurrentReview = async () => {
+    setIsReloading(true);
+    try {
+      const currentSession = await getAnalysisSession(session.id, { cache: 'no-store' });
+      onUpdated(currentSession);
+      setIncidents(currentSession.assessment?.countAnswer?.incidents ?? []);
+      setDraft({ date: '', location: '', description: '', sourceFileId: '' });
+      setShowAdd(false);
+      setSaveError('');
+      setConfirmReload(false);
+    } catch {
+      setSaveError('generic');
+      setConfirmReload(false);
+    } finally {
+      setIsReloading(false);
+    }
+  };
   const addIncident = () => {
     if (!draft.date || !draft.location || !draft.description || !draft.sourceFileId) return;
     setIncidents((current) => [...current, {
@@ -377,6 +413,22 @@ function CountAnswerReview({ session, onUpdated }: { session: AnalysisSession; o
       <textarea value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="Paste the supporting incident sentence from the selected source" className="border border-input bg-background px-3 py-2 md:col-span-2" />
       <div className="flex gap-2 md:col-span-2"><button onClick={addIncident} className="bg-primary px-3 py-2 font-semibold text-primary-foreground">Add incident</button><button onClick={() => setShowAdd(false)} className="border border-input px-3 py-2">Cancel</button></div>
     </div> : null}
+    {saveError === 'conflict' ? <div className="border-t border-[hsl(39_92%_65%_/_0.55)] bg-[hsl(39_92%_65%_/_0.12)] p-4" role="alert" data-testid="notice-review-conflict">
+      <div className="flex items-start gap-3">
+        <CircleAlert size={17} className="mt-0.5 shrink-0 text-[hsl(30_69%_32%)]" />
+        <div className="flex-1">
+          <div className="text-sm font-semibold text-foreground">This review was updated by someone else</div>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">Your save was not applied. Reload the newer review before continuing. Reloading will replace your unsaved local incident changes.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {confirmReload ? <>
+              <button onClick={reloadCurrentReview} disabled={isReloading} className="inline-flex items-center gap-2 bg-[hsl(30_69%_32%)] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50" data-testid="button-confirm-reload-review">{isReloading ? <Loader2 size={13} className="animate-spin" /> : null}Confirm reload and discard local changes</button>
+              <button onClick={() => setConfirmReload(false)} disabled={isReloading} className="border border-input bg-card px-3 py-2 text-xs font-semibold" data-testid="button-cancel-reload-review">Keep local changes</button>
+            </> : <button onClick={() => setConfirmReload(true)} className="border border-[hsl(30_69%_32%_/_0.45)] bg-card px-3 py-2 text-xs font-semibold text-[hsl(30_69%_32%)]" data-testid="button-reload-review">Reload newer review</button>}
+          </div>
+        </div>
+      </div>
+    </div> : null}
+    {saveError === 'generic' ? <div className="flex items-center gap-2 border-t border-[hsl(5_69%_48%_/_0.22)] bg-[hsl(5_69%_48%_/_0.05)] px-4 py-3 text-xs text-[hsl(5_69%_40%)]" role="alert" data-testid="error-save-review"><CircleAlert size={14} />The review could not be saved. Your local changes are still here; try again.</div> : null}
     <div className="flex flex-wrap justify-between gap-3 border-t border-border p-4"><button onClick={() => setShowAdd(true)} className="inline-flex items-center gap-2 border border-input px-3 py-2 font-semibold"><Plus size={14} />Add incident</button><div className="flex items-center gap-2">{hasUncitedIncludedIncident ? <span className="text-xs text-[hsl(5_69%_40%)]">Add citations before finalizing.</span> : null}<button onClick={() => save(false)} disabled={updateReview.isPending} className="border border-input px-3 py-2 font-semibold">Save review</button><button onClick={() => save(true)} disabled={updateReview.isPending || hasUncitedIncludedIncident || !hasSupportedAnswer} className="bg-[hsl(174_44%_32%)] px-3 py-2 font-semibold text-white disabled:opacity-45">{answer.finalized ? 'Finalized' : 'Finalize count'}</button></div></div>
   </div>;
 }
