@@ -216,14 +216,37 @@ function Home() {
   const canResearch = Boolean(session?.id && selectedConnectors.length && !runResearch.isPending);
 
   useEffect(() => {
+    if (!connectorsQuery.data?.length || selectedConnectors.length > 0) return;
+    const permittedMode = classification === 'UNCLASSIFIED' ? 'LIVE' : 'SYNTHETIC';
+    setSelectedConnectors(
+      connectorsQuery.data
+        .filter((connector) => connector.status === 'READY' && connector.mode === permittedMode)
+        .map((connector) => connector.id),
+    );
+  }, [classification, connectorsQuery.data, selectedConnectors.length]);
+
+  useEffect(() => {
     if (session?.sourceFiles?.length && selectedSources.length === 0) setSelectedSources(session.sourceFiles.slice(0, 2).map((source) => source.id));
   }, [session?.id, session?.sourceFiles, selectedSources.length]);
 
   const startSession = () => {
     setActionError('');
     if (prompt.trim().length < 5) { setActionError('Enter a research question with at least five characters.'); return; }
+    if (!selectedConnectors.length) { setActionError('Select at least one ready source adapter.'); return; }
     createSession.mutate({ data: { prompt: prompt.trim(), analyst: 'A. Reyes', classification: AnalysisSessionClassification[classification] } }, {
-      onSuccess: (nextSession) => { setCreatedSession(nextSession); setActiveSessionId(nextSession.id); setResearchResult(null); setLocation(`/?session=${nextSession.id}`); },
+      onSuccess: (nextSession) => {
+        setCreatedSession(nextSession);
+        setActiveSessionId(nextSession.id);
+        setResearchResult(null);
+        setLocation(`/?session=${nextSession.id}`);
+        runResearch.mutate(
+          { sessionId: nextSession.id, data: { sourceConnectorIds: selectedConnectors, maxResults: 12 } },
+          {
+            onSuccess: (result) => { setResearchResult(result); setSelectedSources([]); },
+            onError: () => setActionError('The question was saved, but research did not complete. Use “Run research” below to retry.'),
+          },
+        );
+      },
       onError: () => setActionError('The session could not be created. Check the API status and try again.'),
     });
   };
@@ -249,7 +272,7 @@ function Home() {
     <div className="rise flex flex-col justify-between gap-5 lg:flex-row lg:items-end"><div><div className="section-kicker">Active production cell / {session ? `Session ${session.id.slice(0, 8)}` : 'New session'}</div><h1 className="display mt-2 max-w-3xl text-3xl font-bold tracking-[-0.03em] text-foreground md:text-[40px]">Draft a provisional assessment from a research question.</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">Trace the research workflow. Every drafted judgment starts with a bounded question, a declared source posture, and visible uncertainty.</p></div><div className="flex items-center gap-2 border border-border bg-card px-3 py-2 text-xs text-muted-foreground"><ShieldCheck size={15} className="text-[hsl(174_44%_43%)]" /><span>Supports ICD-203 review</span></div></div>
     <section className="scanline panel-shadow border border-card-border bg-card" data-testid="panel-research-question">
       <div className="flex items-center justify-between border-b border-border/75 px-5 py-4 md:px-6"><div className="flex items-center gap-3"><span className="mono grid h-6 w-6 place-items-center bg-primary text-[10px] text-primary-foreground">01</span><div><div className="text-sm font-semibold">Frame the question</div><div className="text-xs text-muted-foreground">Define the decision space before you collect.</div></div></div><StatusPill status={session?.status ?? 'DRAFT'} /></div>
-      <div className="grid gap-6 p-5 md:p-6 lg:grid-cols-[1.25fr_0.75fr]"><div><label htmlFor="research-prompt" className="section-kicker">Intelligence question</label><textarea id="research-prompt" rows={4} value={prompt || session?.prompt || ''} onChange={(event) => setPrompt(event.target.value)} placeholder="What do you need to know, and by when?" className="mt-2 w-full resize-none border border-input bg-background px-4 py-3 text-sm leading-6 text-foreground placeholder:text-muted-foreground/70 focus:border-primary" data-testid="input-research-prompt" /><div className="mt-3 flex flex-wrap items-center gap-3"><label className="mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground" htmlFor="classification">Classification</label><select id="classification" value={classification} onChange={(event) => setClassification(event.target.value as keyof typeof AnalysisSessionClassification)} className="border border-input bg-background px-2.5 py-1.5 text-xs text-foreground" data-testid="select-classification">{Object.values(AnalysisSessionClassification).map((value) => <option key={value} value={value}>{value}</option>)}</select><span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"><LockKeyhole size={12} /> Applied to the session record</span></div><button onClick={startSession} disabled={isBusy} className="mt-5 inline-flex items-center gap-2 bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-create-session">{createSession.isPending ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}{session ? 'Reset with new question' : 'Create analysis session'}</button></div><div className="border-l border-border/70 pl-0 lg:pl-6"><div className="section-kicker">Source posture</div><p className="mt-2 text-xs leading-5 text-muted-foreground">Only adapters marked ready can be selected. Unavailable sources remain visible as a readiness signal.</p><div className="mt-4"><ConnectorPicker connectors={connectorsQuery.data} selected={selectedConnectors} setSelected={setSelectedConnectors} loading={connectorsQuery.isLoading} error={Boolean(connectorsQuery.error)} classification={classification} /></div></div></div>
+      <div className="grid gap-6 p-5 md:p-6 lg:grid-cols-[1.25fr_0.75fr]"><div><label htmlFor="research-prompt" className="section-kicker">Intelligence question</label><textarea id="research-prompt" rows={4} value={prompt || session?.prompt || ''} onChange={(event) => setPrompt(event.target.value)} placeholder="What do you need to know, and by when?" className="mt-2 w-full resize-none border border-input bg-background px-4 py-3 text-sm leading-6 text-foreground placeholder:text-muted-foreground/70 focus:border-primary" data-testid="input-research-prompt" /><div className="mt-3 flex flex-wrap items-center gap-3"><label className="mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground" htmlFor="classification">Classification</label><select id="classification" value={classification} onChange={(event) => setClassification(event.target.value as keyof typeof AnalysisSessionClassification)} className="border border-input bg-background px-2.5 py-1.5 text-xs text-foreground" data-testid="select-classification">{Object.values(AnalysisSessionClassification).map((value) => <option key={value} value={value}>{value}</option>)}</select><span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"><LockKeyhole size={12} /> Applied to the session record</span></div><button onClick={startSession} disabled={isBusy} className="mt-5 inline-flex items-center gap-2 bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-create-session">{isBusy ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}{runResearch.isPending ? 'Researching public sources…' : session ? 'Research as a new question' : 'Research question'}</button></div><div className="border-l border-border/70 pl-0 lg:pl-6"><div className="section-kicker">Source posture</div><p className="mt-2 text-xs leading-5 text-muted-foreground">Ready public adapters are selected by default. Adjust the selection before starting research.</p><div className="mt-4"><ConnectorPicker connectors={connectorsQuery.data} selected={selectedConnectors} setSelected={setSelectedConnectors} loading={connectorsQuery.isLoading} error={Boolean(connectorsQuery.error)} classification={classification} /></div></div></div>
       {actionError ? <div className="flex items-center gap-2 border-t border-[hsl(5_69%_48%_/_0.22)] bg-[hsl(5_69%_48%_/_0.05)] px-5 py-3 text-xs text-[hsl(5_69%_40%)]" data-testid="error-workbench-action"><CircleAlert size={14} />{actionError}<button className="ml-auto" onClick={() => setActionError('')} aria-label="Dismiss error" data-testid="button-dismiss-error"><X size={14} /></button></div> : null}
     </section>
     <section className="rise rise-delay-1" data-testid="panel-research-results">
@@ -284,7 +307,7 @@ function Home() {
           icon={Radio} 
           title={session?.sourceNotices?.length ? "Research returned no results" : "No retrieved findings yet"} 
           detail={session ? (session.sourceNotices?.length ? "The selected providers failed to return any valid sources for this query. See provider notices above." : 'Run research with one or more ready adapters. Results will appear here with BLUF summaries, source metadata, and reliability signals.') : 'Create an analysis session to unlock the source board.'} 
-          action={!session ? <button onClick={() => document.getElementById('research-prompt')?.focus()} className="inline-flex items-center gap-2 border border-border bg-card px-3 py-2 text-xs font-semibold hover:border-primary" data-testid="button-focus-question"><Target size={14} />Focus the question</button> : undefined} 
+          action={!session ? <button onClick={() => document.getElementById('research-prompt')?.focus()} className="inline-flex items-center gap-2 border border-border bg-card px-3 py-2 text-xs font-semibold hover:border-primary" data-testid="button-focus-question"><Target size={14} />Focus the question</button> : <button onClick={executeResearch} disabled={!canResearch} className="inline-flex items-center gap-2 bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-45" data-testid="button-run-research"><Radio size={14} />Run research</button>} 
         />
       )}
     </section>
