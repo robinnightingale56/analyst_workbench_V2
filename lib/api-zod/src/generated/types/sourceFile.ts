@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { SourceFileContentDepth } from './sourceFileContentDepth';
 import type { SourceFileReliability } from './sourceFileReliability';
 import type { SourceFileSourceType } from './sourceFileSourceType';
 
@@ -26,4 +27,6 @@ export interface SourceFile {
   url: string;
   retrievedAt: string;
   collectionMethod: string;
+  content: string;
+  contentDepth: SourceFileContentDepth;
 }

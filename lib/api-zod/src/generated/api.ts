@@ -39,6 +39,12 @@ export const listAnalysisSessionsResponseAssessmentOneHistoricalRatingsItemScore
 export const listAnalysisSessionsResponseAssessmentOneHistoricalRatingsItemScoreMax = 100;
 
 
+export const listAnalysisSessionsResponseAssessmentOneCountAnswerOneRequestedPartiesMin = 2;
+
+export const listAnalysisSessionsResponseAssessmentOneCountAnswerOneProvisionalCountMin = 0;
+
+
+
 
 export const ListAnalysisSessionsResponseItem = zod.object({
   "id": zod.string(),
@@ -60,7 +66,9 @@ export const ListAnalysisSessionsResponseItem = zod.object({
   "tags": zod.array(zod.string()),
   "url": zod.string(),
   "retrievedAt": zod.string(),
-  "collectionMethod": zod.string()
+  "collectionMethod": zod.string(),
+  "content": zod.string(),
+  "contentDepth": zod.enum(['FULL_TEXT', 'EXCERPT', 'METADATA'])
 })),
   "sourceNotices": zod.array(zod.string()),
   "assessment": zod.union([zod.object({
@@ -102,7 +110,30 @@ export const ListAnalysisSessionsResponseItem = zod.object({
   "drivers": zod.array(zod.string())
 }),
   "provisional": zod.boolean(),
-  "methodology": zod.string()
+  "methodology": zod.string(),
+  "countAnswer": zod.union([zod.object({
+  "question": zod.string(),
+  "requestedParties": zod.array(zod.string().min(1)).min(listAnalysisSessionsResponseAssessmentOneCountAnswerOneRequestedPartiesMin),
+  "eventType": zod.enum(['PHYSICAL_CLASH']),
+  "dateRange": zod.union([zod.object({
+  "startDate": zod.string(),
+  "endDate": zod.string()
+}),zod.null()]),
+  "provisionalCount": zod.number().int().min(listAnalysisSessionsResponseAssessmentOneCountAnswerOneProvisionalCountMin),
+  "confidence": zod.enum(['LOW', 'MODERATE', 'HIGH']),
+  "answerStatus": zod.enum(['SUPPORTED', 'INSUFFICIENT_EVIDENCE']),
+  "inclusionCriteria": zod.string(),
+  "finalized": zod.boolean(),
+  "incidents": zod.array(zod.object({
+  "id": zod.string(),
+  "date": zod.string(),
+  "location": zod.string(),
+  "parties": zod.array(zod.string().min(1)),
+  "description": zod.string(),
+  "sourceFileIds": zod.array(zod.string()),
+  "status": zod.enum(['INCLUDED', 'EXCLUDED'])
+}))
+}),zod.null()])
 }),zod.null()])
 })
 export const ListAnalysisSessionsResponse = zod.array(ListAnalysisSessionsResponseItem)
@@ -141,6 +172,12 @@ export const createAnalysisSessionResponseAssessmentOneHistoricalRatingsItemScor
 export const createAnalysisSessionResponseAssessmentOneHistoricalRatingsItemScoreMax = 100;
 
 
+export const createAnalysisSessionResponseAssessmentOneCountAnswerOneRequestedPartiesMin = 2;
+
+export const createAnalysisSessionResponseAssessmentOneCountAnswerOneProvisionalCountMin = 0;
+
+
+
 
 export const CreateAnalysisSessionResponse = zod.object({
   "id": zod.string(),
@@ -162,7 +199,9 @@ export const CreateAnalysisSessionResponse = zod.object({
   "tags": zod.array(zod.string()),
   "url": zod.string(),
   "retrievedAt": zod.string(),
-  "collectionMethod": zod.string()
+  "collectionMethod": zod.string(),
+  "content": zod.string(),
+  "contentDepth": zod.enum(['FULL_TEXT', 'EXCERPT', 'METADATA'])
 })),
   "sourceNotices": zod.array(zod.string()),
   "assessment": zod.union([zod.object({
@@ -204,7 +243,30 @@ export const CreateAnalysisSessionResponse = zod.object({
   "drivers": zod.array(zod.string())
 }),
   "provisional": zod.boolean(),
-  "methodology": zod.string()
+  "methodology": zod.string(),
+  "countAnswer": zod.union([zod.object({
+  "question": zod.string(),
+  "requestedParties": zod.array(zod.string().min(1)).min(createAnalysisSessionResponseAssessmentOneCountAnswerOneRequestedPartiesMin),
+  "eventType": zod.enum(['PHYSICAL_CLASH']),
+  "dateRange": zod.union([zod.object({
+  "startDate": zod.string(),
+  "endDate": zod.string()
+}),zod.null()]),
+  "provisionalCount": zod.number().int().min(createAnalysisSessionResponseAssessmentOneCountAnswerOneProvisionalCountMin),
+  "confidence": zod.enum(['LOW', 'MODERATE', 'HIGH']),
+  "answerStatus": zod.enum(['SUPPORTED', 'INSUFFICIENT_EVIDENCE']),
+  "inclusionCriteria": zod.string(),
+  "finalized": zod.boolean(),
+  "incidents": zod.array(zod.object({
+  "id": zod.string(),
+  "date": zod.string(),
+  "location": zod.string(),
+  "parties": zod.array(zod.string().min(1)),
+  "description": zod.string(),
+  "sourceFileIds": zod.array(zod.string()),
+  "status": zod.enum(['INCLUDED', 'EXCLUDED'])
+}))
+}),zod.null()])
 }),zod.null()])
 })
 
@@ -235,6 +297,12 @@ export const getAnalysisSessionResponseAssessmentOneHistoricalRatingsItemScoreMi
 export const getAnalysisSessionResponseAssessmentOneHistoricalRatingsItemScoreMax = 100;
 
 
+export const getAnalysisSessionResponseAssessmentOneCountAnswerOneRequestedPartiesMin = 2;
+
+export const getAnalysisSessionResponseAssessmentOneCountAnswerOneProvisionalCountMin = 0;
+
+
+
 
 export const GetAnalysisSessionResponse = zod.object({
   "id": zod.string(),
@@ -256,7 +324,9 @@ export const GetAnalysisSessionResponse = zod.object({
   "tags": zod.array(zod.string()),
   "url": zod.string(),
   "retrievedAt": zod.string(),
-  "collectionMethod": zod.string()
+  "collectionMethod": zod.string(),
+  "content": zod.string(),
+  "contentDepth": zod.enum(['FULL_TEXT', 'EXCERPT', 'METADATA'])
 })),
   "sourceNotices": zod.array(zod.string()),
   "assessment": zod.union([zod.object({
@@ -298,7 +368,30 @@ export const GetAnalysisSessionResponse = zod.object({
   "drivers": zod.array(zod.string())
 }),
   "provisional": zod.boolean(),
-  "methodology": zod.string()
+  "methodology": zod.string(),
+  "countAnswer": zod.union([zod.object({
+  "question": zod.string(),
+  "requestedParties": zod.array(zod.string().min(1)).min(getAnalysisSessionResponseAssessmentOneCountAnswerOneRequestedPartiesMin),
+  "eventType": zod.enum(['PHYSICAL_CLASH']),
+  "dateRange": zod.union([zod.object({
+  "startDate": zod.string(),
+  "endDate": zod.string()
+}),zod.null()]),
+  "provisionalCount": zod.number().int().min(getAnalysisSessionResponseAssessmentOneCountAnswerOneProvisionalCountMin),
+  "confidence": zod.enum(['LOW', 'MODERATE', 'HIGH']),
+  "answerStatus": zod.enum(['SUPPORTED', 'INSUFFICIENT_EVIDENCE']),
+  "inclusionCriteria": zod.string(),
+  "finalized": zod.boolean(),
+  "incidents": zod.array(zod.object({
+  "id": zod.string(),
+  "date": zod.string(),
+  "location": zod.string(),
+  "parties": zod.array(zod.string().min(1)),
+  "description": zod.string(),
+  "sourceFileIds": zod.array(zod.string()),
+  "status": zod.enum(['INCLUDED', 'EXCLUDED'])
+}))
+}),zod.null()])
 }),zod.null()])
 })
 
@@ -338,6 +431,12 @@ export const runResearchResponseAssessmentOneHistoricalRatingsItemScoreMin = 0;
 export const runResearchResponseAssessmentOneHistoricalRatingsItemScoreMax = 100;
 
 
+export const runResearchResponseAssessmentOneCountAnswerOneRequestedPartiesMin = 2;
+
+export const runResearchResponseAssessmentOneCountAnswerOneProvisionalCountMin = 0;
+
+
+
 
 export const RunResearchResponse = zod.object({
   "id": zod.string(),
@@ -359,7 +458,9 @@ export const RunResearchResponse = zod.object({
   "tags": zod.array(zod.string()),
   "url": zod.string(),
   "retrievedAt": zod.string(),
-  "collectionMethod": zod.string()
+  "collectionMethod": zod.string(),
+  "content": zod.string(),
+  "contentDepth": zod.enum(['FULL_TEXT', 'EXCERPT', 'METADATA'])
 })),
   "sourceNotices": zod.array(zod.string()),
   "assessment": zod.union([zod.object({
@@ -401,7 +502,30 @@ export const RunResearchResponse = zod.object({
   "drivers": zod.array(zod.string())
 }),
   "provisional": zod.boolean(),
-  "methodology": zod.string()
+  "methodology": zod.string(),
+  "countAnswer": zod.union([zod.object({
+  "question": zod.string(),
+  "requestedParties": zod.array(zod.string().min(1)).min(runResearchResponseAssessmentOneCountAnswerOneRequestedPartiesMin),
+  "eventType": zod.enum(['PHYSICAL_CLASH']),
+  "dateRange": zod.union([zod.object({
+  "startDate": zod.string(),
+  "endDate": zod.string()
+}),zod.null()]),
+  "provisionalCount": zod.number().int().min(runResearchResponseAssessmentOneCountAnswerOneProvisionalCountMin),
+  "confidence": zod.enum(['LOW', 'MODERATE', 'HIGH']),
+  "answerStatus": zod.enum(['SUPPORTED', 'INSUFFICIENT_EVIDENCE']),
+  "inclusionCriteria": zod.string(),
+  "finalized": zod.boolean(),
+  "incidents": zod.array(zod.object({
+  "id": zod.string(),
+  "date": zod.string(),
+  "location": zod.string(),
+  "parties": zod.array(zod.string().min(1)),
+  "description": zod.string(),
+  "sourceFileIds": zod.array(zod.string()),
+  "status": zod.enum(['INCLUDED', 'EXCLUDED'])
+}))
+}),zod.null()])
 }),zod.null()])
 })
 
@@ -436,6 +560,12 @@ export const createAssessmentResponseAssessmentOneHistoricalRatingsItemScoreMin 
 export const createAssessmentResponseAssessmentOneHistoricalRatingsItemScoreMax = 100;
 
 
+export const createAssessmentResponseAssessmentOneCountAnswerOneRequestedPartiesMin = 2;
+
+export const createAssessmentResponseAssessmentOneCountAnswerOneProvisionalCountMin = 0;
+
+
+
 
 export const CreateAssessmentResponse = zod.object({
   "id": zod.string(),
@@ -457,7 +587,9 @@ export const CreateAssessmentResponse = zod.object({
   "tags": zod.array(zod.string()),
   "url": zod.string(),
   "retrievedAt": zod.string(),
-  "collectionMethod": zod.string()
+  "collectionMethod": zod.string(),
+  "content": zod.string(),
+  "contentDepth": zod.enum(['FULL_TEXT', 'EXCERPT', 'METADATA'])
 })),
   "sourceNotices": zod.array(zod.string()),
   "assessment": zod.union([zod.object({
@@ -499,7 +631,173 @@ export const CreateAssessmentResponse = zod.object({
   "drivers": zod.array(zod.string())
 }),
   "provisional": zod.boolean(),
-  "methodology": zod.string()
+  "methodology": zod.string(),
+  "countAnswer": zod.union([zod.object({
+  "question": zod.string(),
+  "requestedParties": zod.array(zod.string().min(1)).min(createAssessmentResponseAssessmentOneCountAnswerOneRequestedPartiesMin),
+  "eventType": zod.enum(['PHYSICAL_CLASH']),
+  "dateRange": zod.union([zod.object({
+  "startDate": zod.string(),
+  "endDate": zod.string()
+}),zod.null()]),
+  "provisionalCount": zod.number().int().min(createAssessmentResponseAssessmentOneCountAnswerOneProvisionalCountMin),
+  "confidence": zod.enum(['LOW', 'MODERATE', 'HIGH']),
+  "answerStatus": zod.enum(['SUPPORTED', 'INSUFFICIENT_EVIDENCE']),
+  "inclusionCriteria": zod.string(),
+  "finalized": zod.boolean(),
+  "incidents": zod.array(zod.object({
+  "id": zod.string(),
+  "date": zod.string(),
+  "location": zod.string(),
+  "parties": zod.array(zod.string().min(1)),
+  "description": zod.string(),
+  "sourceFileIds": zod.array(zod.string()),
+  "status": zod.enum(['INCLUDED', 'EXCLUDED'])
+}))
+}),zod.null()])
+}),zod.null()])
+})
+
+
+/**
+ * @summary Review candidate incidents and finalize the provisional count
+ */
+export const UpdateIncidentReviewParams = zod.object({
+  "sessionId": zod.coerce.string()
+})
+
+
+export const updateIncidentReviewBodyIncidentsItemPartiesMin = 2;
+
+
+
+export const UpdateIncidentReviewBody = zod.object({
+  "finalized": zod.boolean(),
+  "incidents": zod.array(zod.object({
+  "id": zod.string(),
+  "date": zod.string(),
+  "location": zod.string(),
+  "parties": zod.array(zod.string().min(1)).min(updateIncidentReviewBodyIncidentsItemPartiesMin),
+  "description": zod.string(),
+  "sourceFileIds": zod.array(zod.string()),
+  "status": zod.enum(['INCLUDED', 'EXCLUDED'])
+}))
+})
+
+export const updateIncidentReviewResponseSourceFilesItemRelevanceMin = 0;
+export const updateIncidentReviewResponseSourceFilesItemRelevanceMax = 1;
+
+export const updateIncidentReviewResponseAssessmentOneOverallScoreMin = 0;
+export const updateIncidentReviewResponseAssessmentOneOverallScoreMax = 100;
+
+export const updateIncidentReviewResponseAssessmentOneStandardsItemScoreMin = 0;
+export const updateIncidentReviewResponseAssessmentOneStandardsItemScoreMax = 100;
+
+export const updateIncidentReviewResponseAssessmentOneVectorResultsItemWeightMin = 0;
+export const updateIncidentReviewResponseAssessmentOneVectorResultsItemWeightMax = 1;
+
+export const updateIncidentReviewResponseAssessmentOneVectorResultsItemScoreMin = 0;
+export const updateIncidentReviewResponseAssessmentOneVectorResultsItemScoreMax = 100;
+
+export const updateIncidentReviewResponseAssessmentOneHistoricalRatingsItemScoreMin = 0;
+export const updateIncidentReviewResponseAssessmentOneHistoricalRatingsItemScoreMax = 100;
+
+
+export const updateIncidentReviewResponseAssessmentOneCountAnswerOneRequestedPartiesMin = 2;
+
+export const updateIncidentReviewResponseAssessmentOneCountAnswerOneProvisionalCountMin = 0;
+
+
+
+
+export const UpdateIncidentReviewResponse = zod.object({
+  "id": zod.string(),
+  "prompt": zod.string(),
+  "analyst": zod.string(),
+  "classification": zod.enum(['UNCLASSIFIED', 'CUI', 'SECRET', 'TS']),
+  "status": zod.enum(['DRAFT', 'RESEARCHING', 'READY_FOR_SELECTION', 'ASSESSING', 'COMPLETE', 'FAILED']),
+  "createdAt": zod.string(),
+  "sourceFiles": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "source": zod.string(),
+  "sourceType": zod.enum(['NEWS', 'GOVERNMENT', 'ACADEMIC', 'SOCIAL', 'WEB', 'INTERNAL']),
+  "publishedAt": zod.string(),
+  "relevance": zod.number().min(updateIncidentReviewResponseSourceFilesItemRelevanceMin).max(updateIncidentReviewResponseSourceFilesItemRelevanceMax),
+  "reliability": zod.enum(['HIGH', 'MODERATE', 'LOW', 'UNKNOWN']),
+  "bluf": zod.string(),
+  "keyPoints": zod.array(zod.string()),
+  "tags": zod.array(zod.string()),
+  "url": zod.string(),
+  "retrievedAt": zod.string(),
+  "collectionMethod": zod.string(),
+  "content": zod.string(),
+  "contentDepth": zod.enum(['FULL_TEXT', 'EXCERPT', 'METADATA'])
+})),
+  "sourceNotices": zod.array(zod.string()),
+  "assessment": zod.union([zod.object({
+  "id": zod.string(),
+  "selectedSourceFileIds": zod.array(zod.string()),
+  "overallScore": zod.number().min(updateIncidentReviewResponseAssessmentOneOverallScoreMin).max(updateIncidentReviewResponseAssessmentOneOverallScoreMax),
+  "summary": zod.string(),
+  "standards": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "shortName": zod.string(),
+  "score": zod.number().min(updateIncidentReviewResponseAssessmentOneStandardsItemScoreMin).max(updateIncidentReviewResponseAssessmentOneStandardsItemScoreMax),
+  "status": zod.enum(['PASS', 'REVIEW', 'GAP']),
+  "finding": zod.string(),
+  "prompt": zod.string()
+})),
+  "vectorResults": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "weight": zod.number().min(updateIncidentReviewResponseAssessmentOneVectorResultsItemWeightMin).max(updateIncidentReviewResponseAssessmentOneVectorResultsItemWeightMax),
+  "score": zod.number().min(updateIncidentReviewResponseAssessmentOneVectorResultsItemScoreMin).max(updateIncidentReviewResponseAssessmentOneVectorResultsItemScoreMax),
+  "status": zod.enum(['STRONG', 'MIXED', 'WEAK']),
+  "rationale": zod.string(),
+  "evidenceSourceFileIds": zod.array(zod.string())
+})),
+  "historicalRatings": zod.array(zod.object({
+  "year": zod.number().int(),
+  "rating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
+  "score": zod.number().min(updateIncidentReviewResponseAssessmentOneHistoricalRatingsItemScoreMin).max(updateIncidentReviewResponseAssessmentOneHistoricalRatingsItemScoreMax),
+  "summary": zod.string(),
+  "placeholder": zod.boolean()
+})),
+  "trendAnalysis": zod.object({
+  "direction": zod.enum(['DOWN', 'SAME', 'UP']),
+  "previousRating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
+  "recommendedRating": zod.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']),
+  "confidence": zod.enum(['LOW', 'MODERATE', 'HIGH']),
+  "rationale": zod.string(),
+  "drivers": zod.array(zod.string())
+}),
+  "provisional": zod.boolean(),
+  "methodology": zod.string(),
+  "countAnswer": zod.union([zod.object({
+  "question": zod.string(),
+  "requestedParties": zod.array(zod.string().min(1)).min(updateIncidentReviewResponseAssessmentOneCountAnswerOneRequestedPartiesMin),
+  "eventType": zod.enum(['PHYSICAL_CLASH']),
+  "dateRange": zod.union([zod.object({
+  "startDate": zod.string(),
+  "endDate": zod.string()
+}),zod.null()]),
+  "provisionalCount": zod.number().int().min(updateIncidentReviewResponseAssessmentOneCountAnswerOneProvisionalCountMin),
+  "confidence": zod.enum(['LOW', 'MODERATE', 'HIGH']),
+  "answerStatus": zod.enum(['SUPPORTED', 'INSUFFICIENT_EVIDENCE']),
+  "inclusionCriteria": zod.string(),
+  "finalized": zod.boolean(),
+  "incidents": zod.array(zod.object({
+  "id": zod.string(),
+  "date": zod.string(),
+  "location": zod.string(),
+  "parties": zod.array(zod.string().min(1)),
+  "description": zod.string(),
+  "sourceFileIds": zod.array(zod.string()),
+  "status": zod.enum(['INCLUDED', 'EXCLUDED'])
+}))
+}),zod.null()])
 }),zod.null()])
 })
 

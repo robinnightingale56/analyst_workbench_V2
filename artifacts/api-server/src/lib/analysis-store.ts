@@ -106,7 +106,26 @@ export function assessSession(id: string, selectedSourceFileIds: string[]) {
   const selected = session.sourceFiles.filter((file) =>
     selectedSourceFileIds.includes(file.id),
   );
-  session.assessment = assessSources(selected);
+  session.assessment = assessSources(selected, session.prompt);
   session.status = "COMPLETE";
+  return session;
+}
+
+export function updateIncidentReview(
+  id: string,
+  incidents: NonNullable<NonNullable<AnalysisSession["assessment"]>["countAnswer"]>["incidents"],
+  finalized: boolean,
+) {
+  const session = sessions.get(id);
+  if (!session?.assessment?.countAnswer) return undefined;
+  session.assessment.countAnswer.incidents = incidents;
+  const includedCount = incidents.filter(
+    (incident) => incident.status === "INCLUDED",
+  ).length;
+  session.assessment.countAnswer.provisionalCount = includedCount;
+  session.assessment.countAnswer.answerStatus =
+    includedCount > 0 ? "SUPPORTED" : "INSUFFICIENT_EVIDENCE";
+  session.assessment.countAnswer.finalized = finalized;
+  session.assessment.provisional = !finalized;
   return session;
 }

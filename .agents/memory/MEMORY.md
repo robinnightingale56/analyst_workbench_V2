@@ -1,0 +1,1 @@
+- [Factual count evidence](factual-count-evidence.md) — count answers require affirmative incident-level support; absence of extractable evidence is never a factual zero.

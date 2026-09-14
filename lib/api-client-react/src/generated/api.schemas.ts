@@ -46,6 +46,33 @@ export interface AssessmentInput {
   selectedSourceFileIds: string[];
 }
 
+export type IncidentReviewInputStatus = typeof IncidentReviewInputStatus[keyof typeof IncidentReviewInputStatus];
+
+
+export const IncidentReviewInputStatus = {
+  INCLUDED: 'INCLUDED',
+  EXCLUDED: 'EXCLUDED',
+} as const;
+
+export interface IncidentReviewInput {
+  id: string;
+  date: string;
+  location: string;
+  /**
+     * @minItems 2
+     * @items.minLength 1
+     */
+  parties: string[];
+  description: string;
+  sourceFileIds: string[];
+  status: IncidentReviewInputStatus;
+}
+
+export interface IncidentReviewUpdate {
+  finalized: boolean;
+  incidents: IncidentReviewInput[];
+}
+
 export type AnalysisSessionClassification = typeof AnalysisSessionClassification[keyof typeof AnalysisSessionClassification];
 
 
@@ -90,6 +117,15 @@ export const SourceFileReliability = {
   UNKNOWN: 'UNKNOWN',
 } as const;
 
+export type SourceFileContentDepth = typeof SourceFileContentDepth[keyof typeof SourceFileContentDepth];
+
+
+export const SourceFileContentDepth = {
+  FULL_TEXT: 'FULL_TEXT',
+  EXCERPT: 'EXCERPT',
+  METADATA: 'METADATA',
+} as const;
+
 export interface SourceFile {
   id: string;
   title: string;
@@ -108,6 +144,8 @@ export interface SourceFile {
   url: string;
   retrievedAt: string;
   collectionMethod: string;
+  content: string;
+  contentDepth: SourceFileContentDepth;
 }
 
 export type AnalyticStandardStatus = typeof AnalyticStandardStatus[keyof typeof AnalyticStandardStatus];
@@ -229,6 +267,72 @@ export interface TrendAnalysis {
   drivers: string[];
 }
 
+export type CountAnswerEventType = typeof CountAnswerEventType[keyof typeof CountAnswerEventType];
+
+
+export const CountAnswerEventType = {
+  PHYSICAL_CLASH: 'PHYSICAL_CLASH',
+} as const;
+
+export interface IncidentDateRange {
+  startDate: string;
+  endDate: string;
+}
+
+export type CountAnswerConfidence = typeof CountAnswerConfidence[keyof typeof CountAnswerConfidence];
+
+
+export const CountAnswerConfidence = {
+  LOW: 'LOW',
+  MODERATE: 'MODERATE',
+  HIGH: 'HIGH',
+} as const;
+
+export type CountAnswerAnswerStatus = typeof CountAnswerAnswerStatus[keyof typeof CountAnswerAnswerStatus];
+
+
+export const CountAnswerAnswerStatus = {
+  SUPPORTED: 'SUPPORTED',
+  INSUFFICIENT_EVIDENCE: 'INSUFFICIENT_EVIDENCE',
+} as const;
+
+export type IncidentStatus = typeof IncidentStatus[keyof typeof IncidentStatus];
+
+
+export const IncidentStatus = {
+  INCLUDED: 'INCLUDED',
+  EXCLUDED: 'EXCLUDED',
+} as const;
+
+export interface Incident {
+  id: string;
+  date: string;
+  location: string;
+  /** @items.minLength 1 */
+  parties: string[];
+  description: string;
+  sourceFileIds: string[];
+  status: IncidentStatus;
+}
+
+export interface CountAnswer {
+  question: string;
+  /**
+     * @minItems 2
+     * @items.minLength 1
+     */
+  requestedParties: string[];
+  eventType: CountAnswerEventType;
+  dateRange: IncidentDateRange | null;
+  /** @minimum 0 */
+  provisionalCount: number;
+  confidence: CountAnswerConfidence;
+  answerStatus: CountAnswerAnswerStatus;
+  inclusionCriteria: string;
+  finalized: boolean;
+  incidents: Incident[];
+}
+
 export interface Assessment {
   id: string;
   selectedSourceFileIds: string[];
@@ -244,6 +348,7 @@ export interface Assessment {
   trendAnalysis: TrendAnalysis;
   provisional: boolean;
   methodology: string;
+  countAnswer: CountAnswer | null;
 }
 
 export interface AnalysisSession {

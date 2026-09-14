@@ -10,6 +10,8 @@ type SourceFile = {
   keyPoints: string[];
   tags: string[];
   url: string;
+  content: string;
+  contentDepth: "FULL_TEXT" | "EXCERPT" | "METADATA";
 };
 
 type StandardStatus = "PASS" | "REVIEW" | "GAP";
@@ -166,7 +168,239 @@ function ratingForScore(score: number) {
   return "LOW" as const;
 }
 
-export function assessSources(selected: SourceFile[]) {
+const eventTermPattern =
+  String.raw`clash(?:ed|es|ing)?|fight(?:s|ing)?|fought|exchange(?:s|d|ing)? fire|skirmish(?:ed|es|ing)?`;
+const eventTermRegex = new RegExp(String.raw`\b(?:${eventTermPattern})\b`, "i");
+const unsupportedClaimRegex =
+  /\b(?:no|not|never|den(?:y|ied|ies)|may|might|could|would|will|possible|possibly|potential|expected|forecast|planned|plans|report denied|without|whether|if)\b|n't\b/i;
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function sentenceLinksPartiesToEvent(sentence: string, parties: string[]) {
+  if (parties.length !== 2 || parties.some((party) => !party.trim())) return false;
+  const pairs = [
+    [escapeRegExp(parties[0]!.trim()), escapeRegExp(parties[1]!.trim())],
+    [escapeRegExp(parties[1]!.trim()), escapeRegExp(parties[0]!.trim())],
+  ];
+  return pairs.some(([left, right]) => [
+    new RegExp(String.raw`\b${left}\b\s+(?:and|&)\s+\b${right}\b(?:\s+\w+){0,5}\s+(?:${eventTermPattern})\b`, "i"),
+    new RegExp(String.raw`\b${left}\b(?:\s+\w+){0,4}\s+(?:${eventTermPattern})\s+(?:with|against|versus|vs\.?)\s+\b${right}\b`, "i"),
+    new RegExp(String.raw`(?:${eventTermPattern})(?:\s+\w+){0,5}\s+between\s+\b${left}\b\s+and\s+\b${right}\b`, "i"),
+  ].some((pattern) => pattern.test(sentence)));
+}
+
+export type Incident = {
+  id: string;
+  date: string;
+  location: string;
+  parties: string[];
+  description: string;
+  sourceFileIds: string[];
+  status: "INCLUDED" | "EXCLUDED";
+};
+
+export function sourceSupportsIncident(source: SourceFile, incident: Incident) {
+  if (source.contentDepth === "METADATA") return false;
+  return source.content
+    .split(/(?<=[.!?])\s+/)
+    .some((sentence) => {
+      const date = extractIncidentDate(sentence);
+      const supportsParties = sentenceLinksPartiesToEvent(sentence, incident.parties);
+      const supportsLocation =
+        incident.location === "Location not established" ||
+        sentence.toLowerCase().includes(incident.location.toLowerCase());
+      const descriptionTerms = similarityTerms(incident.description, incident.parties);
+      const sentenceTerms = similarityTerms(sentence, incident.parties);
+      const descriptionOverlap = [...descriptionTerms]
+        .filter((term) => sentenceTerms.has(term)).length;
+      const supportsDescription =
+        descriptionTerms.size > 0 &&
+        descriptionOverlap / descriptionTerms.size >= 0.5;
+      return Boolean(
+        date &&
+        date.slice(0, 10) === incident.date.slice(0, 10) &&
+        eventTermRegex.test(sentence) &&
+        !unsupportedClaimRegex.test(sentence) &&
+        supportsParties &&
+        supportsLocation &&
+        supportsDescription
+      );
+    });
+}
+
+export function incidentCitationError(
+  incident: Incident,
+  selectedSources: SourceFile[],
+  requestedParties = incident.parties,
+  dateRange: { startDate: string; endDate: string } | null = null,
+) {
+  const normalizedExpected = requestedParties.map((party) => party.trim().toLowerCase()).sort();
+  const normalizedActual = incident.parties.map((party) => party.trim().toLowerCase()).sort();
+  if (
+    normalizedActual.some((party) => party.length === 0) ||
+    normalizedExpected.length !== normalizedActual.length ||
+    normalizedExpected.some((party, index) => party !== normalizedActual[index])
+  ) {
+    return "Incident parties must match the parties requested in the count question";
+  }
+  if (
+    dateRange &&
+    (incident.date.slice(0, 10) < dateRange.startDate || incident.date.slice(0, 10) > dateRange.endDate)
+  ) {
+    return "Incident date falls outside the period requested in the count question";
+  }
+  if (incident.sourceFileIds.length === 0) return "Every included incident requires a citation";
+  const selectedById = new Map(selectedSources.map((source) => [source.id, source]));
+  for (const sourceId of incident.sourceFileIds) {
+    const source = selectedById.get(sourceId);
+    if (!source) return "Incident citations must belong to the selected evidence set";
+    if (source.contentDepth === "METADATA") return "Metadata-only records cannot support a finalized incident";
+    if (!sourceSupportsIncident(source, incident)) {
+      return "A cited source does not support the incident parties, date, event, and location";
+    }
+  }
+  return null;
+}
+
+function extractParties(question: string) {
+  const patterns = [
+    new RegExp(String.raw`^how many times (?:did|have|has)\s+([a-z][\w .'-]{1,40}?)\s+(?:and|with|versus|vs\.?)\s+([a-z][\w .'-]{1,40}?)\s+(?:${eventTermPattern})\s*[?.]*$`, "i"),
+    new RegExp(String.raw`^how many times (?:did|have|has)\s+([a-z][\w .'-]{1,40}?)\s+(?:${eventTermPattern})\s+(?:with|against|versus|vs\.?)\s+([a-z][\w .'-]{1,40}?)\s*[?.]*$`, "i"),
+    /^how many (?:clashes|fights|skirmishes)(?:\s+\w+){0,4}\s+between\s+([a-z][\w .'-]{1,40}?)\s+(?:and|versus|vs\.?)\s+([a-z][\w .'-]{1,40}?)\s*[?.]*$/i,
+    /^(?:what (?:is|was) )?(?:the )?(?:number|count) of (?:clashes|fights|skirmishes)(?:\s+\w+){0,4}\s+between\s+([a-z][\w .'-]{1,40}?)\s+(?:and|versus|vs\.?)\s+([a-z][\w .'-]{1,40}?)\s*[?.]*$/i,
+  ];
+  for (const pattern of patterns) {
+    const match = question.match(pattern);
+    if (match?.[1] && match[2]) return [match[1].trim(), match[2].trim()];
+  }
+  return null;
+}
+
+function extractIncidentDate(text: string) {
+  const match = text.match(/\b(?:on\s+)?(\d{1,2}\s+[A-Z][a-z]+\s+\d{4}|[A-Z][a-z]+\s+\d{1,2},?\s+\d{4}|\d{4}-\d{2}-\d{2})\b/);
+  if (match?.[1] && !Number.isNaN(Date.parse(match[1]))) {
+    return new Date(match[1]).toISOString();
+  }
+  return null;
+}
+
+function extractLocation(text: string) {
+  const match = text.match(/\b(?:in|near|at|along)\s+(?:the\s+)?([A-Z][A-Za-z0-9' -]{2,60}?)(?=[,.;]|\s+(?:on|after|before|where|when|border)\b)/);
+  return match?.[1]?.trim() || "Location not established";
+}
+
+function similarityTerms(text: string, parties: string[]) {
+  const ignored = new Set([
+    "clash", "clashed", "clashes", "exchange", "exchanged", "fire",
+    "country", "september", "october", "november", "december",
+    ...parties.flatMap((party) => party.toLowerCase().split(/[^a-z0-9]+/)),
+  ]);
+  return new Set(
+    text.toLowerCase().split(/[^a-z0-9]+/)
+      .filter((term) => term.length > 3 && !ignored.has(term)),
+  );
+}
+
+function sameIncident(left: Incident, right: Incident) {
+  if (left.date.slice(0, 10) !== right.date.slice(0, 10)) return false;
+  const leftLocation = left.location.toLowerCase();
+  const rightLocation = right.location.toLowerCase();
+  const leftKnown = leftLocation !== "location not established";
+  const rightKnown = rightLocation !== "location not established";
+  if (leftKnown && rightKnown && leftLocation !== rightLocation) return false;
+  const leftTerms = similarityTerms(left.description, left.parties);
+  const rightTerms = similarityTerms(right.description, right.parties);
+  const overlap = [...leftTerms].filter((term) => rightTerms.has(term)).length;
+  const denominator = Math.max(1, Math.min(leftTerms.size, rightTerms.size));
+  return leftKnown && rightKnown ? overlap / denominator >= 0.25 : overlap / denominator >= 0.6;
+}
+
+export function deduplicateIncidents(input: Incident[]) {
+  const incidents: Incident[] = [];
+  for (const candidate of input) {
+    const duplicate = incidents.find((incident) => sameIncident(incident, candidate));
+    if (!duplicate) {
+      incidents.push({
+        ...candidate,
+        parties: [...candidate.parties],
+        sourceFileIds: [...new Set(candidate.sourceFileIds)],
+      });
+      continue;
+    }
+    duplicate.sourceFileIds = [...new Set([
+      ...duplicate.sourceFileIds,
+      ...candidate.sourceFileIds,
+    ])];
+    if (candidate.description.length > duplicate.description.length) {
+      duplicate.description = candidate.description;
+    }
+    if (candidate.status === "INCLUDED") duplicate.status = "INCLUDED";
+  }
+  return incidents;
+}
+
+export function buildCountAnswer(question: string, selected: SourceFile[]) {
+  const yearMatch = question.match(/\s+(?:in|during)\s+((?:19|20)\d{2})\s*[?.]*$/i);
+  const normalizedQuestion = yearMatch
+    ? question.slice(0, yearMatch.index).trim().replace(/[?.]+$/, "")
+    : question;
+  const dateRange = yearMatch
+    ? { startDate: `${yearMatch[1]}-01-01`, endDate: `${yearMatch[1]}-12-31` }
+    : null;
+  const parties = extractParties(normalizedQuestion);
+  const countIntent = /\b(how many|number of|count)\b/i.test(normalizedQuestion) &&
+    eventTermRegex.test(normalizedQuestion);
+  if (!countIntent || !parties) return null;
+  const candidates: Incident[] = [];
+  for (const source of selected) {
+    if (source.contentDepth === "METADATA") continue;
+    const sentences = source.content
+      .split(/(?<=[.!?])\s+/)
+      .filter(Boolean);
+    sentences.forEach((sentence) => {
+      const supportsBothParties = sentenceLinksPartiesToEvent(sentence, parties);
+      const date = extractIncidentDate(sentence);
+      if (
+        !eventTermRegex.test(sentence) ||
+        unsupportedClaimRegex.test(sentence) ||
+        !supportsBothParties ||
+        !date
+      ) return;
+      if (
+        dateRange &&
+        (date.slice(0, 10) < dateRange.startDate || date.slice(0, 10) > dateRange.endDate)
+      ) return;
+      candidates.push({
+        id: crypto.randomUUID(),
+        date,
+        location: extractLocation(sentence),
+        parties,
+        description: sentence,
+        sourceFileIds: [source.id],
+        status: "INCLUDED",
+      });
+    });
+  }
+  const incidents = deduplicateIncidents(candidates);
+  const corroborated = incidents.filter((incident) => incident.sourceFileIds.length > 1).length;
+  const confidence = incidents.length === 0 ? "LOW" : corroborated > 0 || selected.some((source) => source.reliability === "HIGH") ? "MODERATE" : "LOW";
+  return {
+    question,
+    requestedParties: parties,
+    eventType: "PHYSICAL_CLASH" as const,
+    dateRange,
+    provisionalCount: incidents.length,
+    confidence: confidence as "LOW" | "MODERATE" | "HIGH",
+    answerStatus: incidents.length > 0 ? "SUPPORTED" as const : "INSUFFICIENT_EVIDENCE" as const,
+    inclusionCriteria: `Distinct physical clashes or exchanges of fire that name both requested parties and state an event date${dateRange ? ` within ${yearMatch?.[1]}` : ""}. Reports with the same event date, compatible location, and substantially overlapping event details are consolidated as one incident.`,
+    incidents,
+    finalized: false,
+  };
+}
+
+export function assessSources(selected: SourceFile[], question = "") {
   const sourceCount = selected.length;
   const highReliability = selected.filter((item) => item.reliability === "HIGH").length;
   const sourceTypes = new Set(selected.map((item) => item.sourceType)).size;
@@ -288,5 +522,6 @@ export function assessSources(selected: SourceFile[]) {
     vectorResults,
     historicalRatings,
     trendAnalysis,
+    countAnswer: buildCountAnswer(question, selected),
   };
 }

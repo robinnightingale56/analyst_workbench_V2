@@ -27,6 +27,7 @@ import type {
   EvaluationVectorDefinition,
   HealthStatus,
   HistoricalRating,
+  IncidentReviewUpdate,
   ResearchRunInput,
   SourceConnector
 } from './api.schemas';
@@ -554,6 +555,95 @@ export const useCreateAssessment = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCreateAssessmentMutationOptions(options));
+    }
+
+export const getUpdateIncidentReviewUrl = (sessionId: string,) => {
+
+
+
+
+  return `/api/analysis-sessions/${sessionId}/assessment`
+}
+
+/**
+ * @summary Review candidate incidents and finalize the provisional count
+ */
+export const updateIncidentReview = async (sessionId: string,
+    incidentReviewUpdate: IncidentReviewUpdate, options?: Parameters<typeof customFetch>[1]): Promise<AnalysisSession> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AnalysisSession>(getUpdateIncidentReviewUrl(sessionId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(incidentReviewUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdateIncidentReviewMutationKey = () => ['updateIncidentReview'] as const;
+
+export const getUpdateIncidentReviewMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateIncidentReview>>, TError,UpdateIncidentReviewMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateIncidentReview>>, TError,UpdateIncidentReviewMutationVariables, TContext> => {
+
+const mutationKey = getUpdateIncidentReviewMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateIncidentReview>>, UpdateIncidentReviewMutationVariables> = (props) => {
+          const {sessionId,data} = props ?? {};
+
+          return  updateIncidentReview(sessionId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateIncidentReviewMutationResult = NonNullable<Awaited<ReturnType<typeof updateIncidentReview>>>
+    export type UpdateIncidentReviewMutationBody = BodyType<IncidentReviewUpdate>
+    export type UpdateIncidentReviewMutationError = ErrorType<unknown>
+    export type UpdateIncidentReviewMutationVariables = {sessionId: string;data: BodyType<IncidentReviewUpdate>}
+
+    /**
+ * @summary Review candidate incidents and finalize the provisional count
+ */
+export const useUpdateIncidentReview = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateIncidentReview>>, TError,UpdateIncidentReviewMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateIncidentReview>>,
+        TError,
+        UpdateIncidentReviewMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateIncidentReviewMutationOptions(options));
     }
 
 export const getListSourceConnectorsUrl = () => {

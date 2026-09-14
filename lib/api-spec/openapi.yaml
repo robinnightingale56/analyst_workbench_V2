@@ -119,6 +119,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AnalysisSession"
+    patch:
+      operationId: updateIncidentReview
+      tags: [analysis]
+      summary: Review candidate incidents and finalize the provisional count
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IncidentReviewUpdate"
+      responses:
+        "200":
+          description: Updated session with reviewed incidents
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisSession"
   /source-connectors:
     get:
       operationId: listSourceConnectors
@@ -216,6 +235,41 @@ components:
           type: array
           items:
             type: string
+    IncidentReviewUpdate:
+      type: object
+      required: [incidents, finalized]
+      properties:
+        finalized:
+          type: boolean
+        incidents:
+          type: array
+          items:
+            $ref: "#/components/schemas/IncidentReviewInput"
+    IncidentReviewInput:
+      type: object
+      required: [id, date, location, parties, description, sourceFileIds, status]
+      properties:
+        id:
+          type: string
+        date:
+          type: string
+        location:
+          type: string
+        parties:
+          type: array
+          minItems: 2
+          items:
+            type: string
+            minLength: 1
+        description:
+          type: string
+        sourceFileIds:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [INCLUDED, EXCLUDED]
     AnalysisSession:
       type: object
       required:
@@ -271,6 +325,8 @@ components:
         - url
         - retrievedAt
         - collectionMethod
+        - content
+        - contentDepth
       properties:
         id:
           type: string
@@ -306,6 +362,11 @@ components:
           type: string
         collectionMethod:
           type: string
+        content:
+          type: string
+        contentDepth:
+          type: string
+          enum: [FULL_TEXT, EXCERPT, METADATA]
     SourceConnector:
       type: object
       required: [id, name, description, status, mode, sourceTypes]
@@ -340,6 +401,7 @@ components:
         - provisional
         - methodology
         - summary
+        - countAnswer
       properties:
         id:
           type: string
@@ -371,6 +433,78 @@ components:
           type: boolean
         methodology:
           type: string
+        countAnswer:
+          oneOf:
+            - $ref: "#/components/schemas/CountAnswer"
+            - type: "null"
+    CountAnswer:
+      type: object
+      required: [question, requestedParties, eventType, dateRange, provisionalCount, confidence, answerStatus, inclusionCriteria, incidents, finalized]
+      properties:
+        question:
+          type: string
+        requestedParties:
+          type: array
+          minItems: 2
+          items:
+            type: string
+            minLength: 1
+        eventType:
+          type: string
+          enum: [PHYSICAL_CLASH]
+        dateRange:
+          oneOf:
+            - $ref: "#/components/schemas/IncidentDateRange"
+            - type: "null"
+        provisionalCount:
+          type: integer
+          minimum: 0
+        confidence:
+          type: string
+          enum: [LOW, MODERATE, HIGH]
+        answerStatus:
+          type: string
+          enum: [SUPPORTED, INSUFFICIENT_EVIDENCE]
+        inclusionCriteria:
+          type: string
+        finalized:
+          type: boolean
+        incidents:
+          type: array
+          items:
+            $ref: "#/components/schemas/Incident"
+    IncidentDateRange:
+      type: object
+      required: [startDate, endDate]
+      properties:
+        startDate:
+          type: string
+        endDate:
+          type: string
+    Incident:
+      type: object
+      required: [id, date, location, parties, description, sourceFileIds, status]
+      properties:
+        id:
+          type: string
+        date:
+          type: string
+        location:
+          type: string
+        parties:
+          type: array
+          items:
+            type: string
+            minLength: 1
+        description:
+          type: string
+        sourceFileIds:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [INCLUDED, EXCLUDED]
     AnalyticStandard:
       type: object
       required: [id, name, shortName, score, status, finding, prompt]

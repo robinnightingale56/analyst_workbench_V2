@@ -12,6 +12,8 @@ export type SourceFile = {
   url: string;
   retrievedAt: string;
   collectionMethod: string;
+  content: string;
+  contentDepth: "FULL_TEXT" | "EXCERPT" | "METADATA";
 };
 
 export const sourceConnectors = [
@@ -19,6 +21,14 @@ export const sourceConnectors = [
     id: "google-news-rss",
     name: "Google News",
     description: "Live news and article discovery through the public Google News RSS feed.",
+    status: "READY",
+    mode: "LIVE",
+    sourceTypes: ["NEWS", "WEB"],
+  },
+  {
+    id: "bing-news-rss",
+    name: "Bing News",
+    description: "Live news discovery with substantive report snippets from Bing's public RSS feed.",
     status: "READY",
     mode: "LIVE",
     sourceTypes: ["NEWS", "WEB"],
@@ -67,6 +77,20 @@ function cleanText(value: string | undefined, fallback: string) {
     .replace(/\s+/g, " ")
     .trim();
   return (text || fallback).slice(0, 700);
+}
+
+function cleanContent(value: string | undefined, fallback: string) {
+  const text = (value ?? "")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return (text || fallback).slice(0, 8_000);
 }
 
 function promptTags(prompt: string) {
@@ -148,6 +172,8 @@ async function searchGoogleNews(prompt: string, limit: number): Promise<SourceFi
       ? rawTitle.slice(0, -(` - ${source}`.length))
       : rawTitle;
     const publishedAt = rssValue(item, "pubDate");
+    const feedContent = rssValue(item, "description");
+    const articleUrl = rssValue(item, "link") || "https://news.google.com/";
     return {
       id: crypto.randomUUID(),
       title,
@@ -165,11 +191,70 @@ async function searchGoogleNews(prompt: string, limit: number): Promise<SourceFi
         "Review the linked article for sourcing, context, and possible bias.",
       ],
       tags: [...promptTags(prompt), "live", "news"],
-      url: rssValue(item, "link") || "https://news.google.com/",
+      url: articleUrl,
       retrievedAt,
       collectionMethod: "Google News public RSS",
+      content: cleanContent(
+        feedContent,
+        `${title}. The RSS provider did not include an article excerpt; use the linked report for full context.`,
+      ),
+      contentDepth: "METADATA",
     } satisfies SourceFile;
   });
+}
+
+export function parseBingNewsRss(
+  xml: string,
+  prompt: string,
+  limit: number,
+  retrievedAt = new Date().toISOString(),
+): SourceFile[] {
+  const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)]
+    .slice(0, Math.min(limit, 25))
+    .map((match) => match[1] ?? "");
+  return items.map((item, index) => {
+    const title = rssValue(item, "title") || "Untitled news report";
+    const source = rssValue(item, "News:Source") || "Bing News source";
+    const publishedAt = rssValue(item, "pubDate");
+    const description = cleanContent(rssValue(item, "description"), "");
+    const substantiveExcerpt =
+      description.length >= 80 && description.toLowerCase() !== title.toLowerCase();
+    return {
+      id: crypto.randomUUID(),
+      title,
+      source,
+      sourceType: "NEWS",
+      publishedAt: publishedAt && !Number.isNaN(Date.parse(publishedAt))
+        ? new Date(publishedAt).toISOString()
+        : retrievedAt,
+      relevance: Math.max(0.55, 0.95 - index * 0.035),
+      reliability: "UNKNOWN",
+      bluf: substantiveExcerpt
+        ? description.slice(0, 700)
+        : `${title}. The feed did not include a substantive report excerpt.`,
+      keyPoints: [
+        `Published by ${source} and discovered through Bing News.`,
+        substantiveExcerpt
+          ? "The public feed supplied a substantive report snippet used for candidate extraction."
+          : "The public feed supplied discovery metadata only; it cannot support a factual count.",
+        "Review the linked report before final dissemination.",
+      ],
+      tags: [...promptTags(prompt), "live", "news"],
+      url: rssValue(item, "link") || "https://www.bing.com/news",
+      retrievedAt,
+      collectionMethod: "Bing News public RSS",
+      content: substantiveExcerpt ? description : title,
+      contentDepth: substantiveExcerpt ? "EXCERPT" : "METADATA",
+    };
+  });
+}
+
+async function searchBingNews(prompt: string, limit: number): Promise<SourceFile[]> {
+  const url = new URL("https://www.bing.com/news/search");
+  url.searchParams.set("q", prompt);
+  url.searchParams.set("format", "rss");
+  const xml = await fetchText(url);
+  return parseBingNewsRss(xml, prompt, limit);
 }
 
 async function searchFederalRegister(prompt: string, limit: number): Promise<SourceFile[]> {
@@ -217,6 +302,11 @@ async function searchFederalRegister(prompt: string, limit: number): Promise<Sou
       url: document.html_url || "https://www.federalregister.gov/",
       retrievedAt,
       collectionMethod: "Federal Register public API",
+      content: cleanText(
+        document.abstract,
+        `${title}. The public API did not include an abstract; review the official document.`,
+      ),
+      contentDepth: document.abstract ? "EXCERPT" : "METADATA",
     } satisfies SourceFile;
   });
 }
@@ -267,6 +357,11 @@ async function searchCrossref(prompt: string, limit: number): Promise<SourceFile
       url: work.URL || "https://www.crossref.org/",
       retrievedAt,
       collectionMethod: "Crossref public REST API",
+      content: cleanText(
+        work.abstract,
+        `${title}. Crossref did not include an abstract; review the linked publication.`,
+      ),
+      contentDepth: work.abstract ? "EXCERPT" : "METADATA",
     } satisfies SourceFile;
   });
 }
@@ -278,6 +373,7 @@ const templates = [
     sourceType: "GOVERNMENT" as const,
     reliability: "HIGH" as const,
     bluf: "Synthetic training reporting indicates a measurable change, but does not establish intent or long-term trajectory.",
+    content: "On 12 September 2026, Country Alpha and Country Beta exchanged fire near the North Ridge border crossing. Officials described the encounter as brief and reported no territorial change.",
   },
   {
     title: "Training record: independent reporting adds context",
@@ -285,6 +381,7 @@ const templates = [
     sourceType: "NEWS" as const,
     reliability: "MODERATE" as const,
     bluf: "Synthetic independent reporting broadly aligns with the training scenario while adding second-order implications.",
+    content: "Independent reporting said Country Alpha and Country Beta clashed at the North Ridge border crossing on 12 September 2026. The exchange appears to describe the same brief incident reported by officials.",
   },
 ] as const;
 
@@ -303,6 +400,7 @@ export function generateDemonstrationFiles(prompt: string, maxResults = 4): Sour
     url: `about:blank#demonstration-source-${index + 1}`,
     retrievedAt,
     collectionMethod: "Synthetic demonstration library",
+    contentDepth: "FULL_TEXT",
   }));
 }
 
@@ -318,6 +416,7 @@ export async function runOpenSourceResearch(
   const selected = new Set(connectorIds);
   const liveAdapters = [
     { id: "google-news-rss", name: "Google News", run: searchGoogleNews },
+    { id: "bing-news-rss", name: "Bing News", run: searchBingNews },
     { id: "federal-register", name: "Federal Register", run: searchFederalRegister },
     { id: "crossref", name: "Crossref Research", run: searchCrossref },
   ].filter((adapter) => selected.has(adapter.id));

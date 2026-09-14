@@ -44,11 +44,13 @@ import {
   useListEvaluationVectors,
   useListHistoricalRatings,
   useRunResearch,
+  useUpdateIncidentReview,
   getGetAnalysisSessionQueryKey,
   type AnalysisSession,
   type AnalyticStandard,
   type SourceConnector,
   type SourceFile,
+  type Incident,
 } from '@workspace/api-client-react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -188,14 +190,14 @@ function SourceCard({ source, selected, onToggle }: { source: SourceFile; select
       {source.retrievedAt && <div className="flex items-center gap-1.5"><Clock3 size={12} /><span className="mono uppercase tracking-[0.08em]">{formatDateTime(source.retrievedAt)}</span></div>}
     </div>
     <div className="mt-4 grid grid-cols-2 gap-3 border-t border-border/70 pt-3"><div><div className="mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground">Relevance</div><div className="mt-1 flex items-center gap-2"><div className="h-1.5 flex-1 bg-secondary"><div className="h-full bg-[hsl(174_44%_43%)]" style={{ width: `${Math.round(source.relevance * 100)}%` }} /></div><span className="mono text-[10px] font-medium">{Math.round(source.relevance * 100)}%</span></div></div><div><div className="mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground">Reliability</div><div className="mt-1"><StatusPill status={source.reliability} /></div></div></div>
-    <div className="mt-4 flex flex-wrap gap-1.5">{source.tags.map((tag) => <span className="mono border border-border bg-muted px-1.5 py-0.5 text-[9px] uppercase tracking-[0.08em] text-muted-foreground" key={tag}>{tag}</span>)}</div>
+    <div className="mt-4 flex flex-wrap gap-1.5">{source.tags.map((tag, index) => <span className="mono border border-border bg-muted px-1.5 py-0.5 text-[9px] uppercase tracking-[0.08em] text-muted-foreground" key={`${tag}-${index}`}>{tag}</span>)}</div>
     <a className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-[hsl(174_44%_32%)] hover:underline" href={source.url} target="_blank" rel="noreferrer" data-testid={`link-source-${source.id}`}>Open source <ArrowUpRight size={12} /></a>
   </article>;
 }
 
 function Home() {
   const [location, setLocation] = useLocation();
-  const querySessionId = new URLSearchParams(location.split('?')[1] ?? '').get('session');
+  const querySessionId = new URLSearchParams(window.location.search).get('session');
   const [prompt, setPrompt] = useState('');
   const [classification, setClassification] = useState<keyof typeof AnalysisSessionClassification>('UNCLASSIFIED');
   const [selectedConnectors, setSelectedConnectors] = useState<string[]>([]);
@@ -311,11 +313,76 @@ function Home() {
         />
       )}
     </section>
-    {session?.assessment ? <AssessmentSummary assessment={session.assessment} /> : null}
+    {session?.assessment ? <AssessmentSummary session={session} onUpdated={setResearchResult} /> : null}
   </div>;
 }
 
-function AssessmentSummary({ assessment }: { assessment: NonNullable<AnalysisSession['assessment']> }) {
+function CountAnswerReview({ session, onUpdated }: { session: AnalysisSession; onUpdated: (session: AnalysisSession) => void }) {
+  const answer = session.assessment!.countAnswer!;
+  const [incidents, setIncidents] = useState<Incident[]>(answer.incidents);
+  const [showAdd, setShowAdd] = useState(false);
+  const [draft, setDraft] = useState({ date: '', location: '', description: '', sourceFileId: '' });
+  const updateReview = useUpdateIncidentReview();
+  useEffect(() => setIncidents(answer.incidents), [answer.incidents]);
+  const includedCount = incidents.filter((incident) => incident.status === 'INCLUDED').length;
+  const hasUncitedIncludedIncident = incidents.some((incident) => incident.status === 'INCLUDED' && incident.sourceFileIds.length === 0);
+  const hasSupportedAnswer = includedCount > 0;
+  const save = (finalized: boolean) => updateReview.mutate(
+    { sessionId: session.id, data: { incidents, finalized } },
+    { onSuccess: onUpdated },
+  );
+  const addIncident = () => {
+    if (!draft.date || !draft.location || !draft.description || !draft.sourceFileId) return;
+    setIncidents((current) => [...current, {
+      id: crypto.randomUUID(),
+      date: new Date(`${draft.date}T12:00:00Z`).toISOString(),
+      location: draft.location,
+      parties: answer.requestedParties,
+      description: draft.description,
+      sourceFileIds: [draft.sourceFileId],
+      status: 'INCLUDED',
+    }]);
+    setDraft({ date: '', location: '', description: '', sourceFileId: '' });
+    setShowAdd(false);
+  };
+  return <div className="mt-6 border border-[hsl(174_44%_43%_/_0.35)] bg-card" data-testid="panel-count-answer">
+    <div className="flex flex-col gap-4 border-b border-border p-5 sm:flex-row sm:items-center sm:justify-between">
+      <div><div className="section-kicker">Direct answer</div>{hasSupportedAnswer ? <div className="mt-2 flex items-baseline gap-3"><span className="display text-5xl font-bold text-[hsl(174_44%_32%)]">{includedCount}</span><span className="text-sm font-semibold">distinct incidents provisionally included</span></div> : <div className="mt-2 text-xl font-bold text-[hsl(30_69%_32%)]">Insufficient evidence for a factual count</div>}<p className="mt-2 text-xs text-muted-foreground">{answer.question}</p></div>
+      <div className="flex items-center gap-2"><span className="text-xs font-semibold">Confidence</span><StatusPill status={answer.confidence} /></div>
+    </div>
+    <div className="border-b border-border bg-muted/35 px-5 py-3 text-xs leading-5 text-muted-foreground"><span className="font-semibold text-foreground">Inclusion criteria:</span> {answer.inclusionCriteria}</div>
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[820px] text-left text-xs">
+        <thead className="mono border-b border-border bg-muted/25 text-[9px] uppercase tracking-[0.1em] text-muted-foreground"><tr><th className="px-4 py-3">Include</th><th className="px-4 py-3">Date</th><th className="px-4 py-3">Location / parties</th><th className="px-4 py-3">Incident</th><th className="px-4 py-3">Citations</th></tr></thead>
+        <tbody className="divide-y divide-border">
+          {incidents.map((incident) => <tr key={incident.id} className={incident.status === 'EXCLUDED' ? 'opacity-50' : ''}>
+            <td className="px-4 py-4"><button onClick={() => setIncidents((current) => current.map((item) => item.id === incident.id ? { ...item, status: item.status === 'INCLUDED' ? 'EXCLUDED' : 'INCLUDED' } : item))} className={`grid h-6 w-6 place-items-center border ${incident.status === 'INCLUDED' ? 'border-primary bg-primary text-primary-foreground' : 'border-input'}`} aria-label={incident.status === 'INCLUDED' ? 'Remove incident from count' : 'Approve incident'}>{incident.status === 'INCLUDED' ? <Check size={13} /> : null}</button></td>
+            <td className="px-4 py-4 font-semibold">{formatDate(incident.date)}</td>
+            <td className="px-4 py-4"><div className="font-semibold">{incident.location}</div><div className="mt-1 text-muted-foreground">{incident.parties.join(' / ')}</div></td>
+            <td className="max-w-md px-4 py-4 leading-5">{incident.description}</td>
+            <td className="px-4 py-4">{incident.sourceFileIds.length ? <div className="space-y-1">{incident.sourceFileIds.map((id) => { const source = session.sourceFiles.find((item) => item.id === id); return source ? <a key={id} href={source.url} target="_blank" rel="noreferrer" className="block font-semibold text-[hsl(174_44%_32%)] hover:underline">[{session.sourceFiles.indexOf(source) + 1}] {source.source}</a> : null; })}</div> : <span className="text-[hsl(30_69%_32%)]">Analyst-added; citation needed</span>}</td>
+          </tr>)}
+          {!incidents.length ? <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">No affirmative, dated incidents supported by report excerpts were extracted. This is not evidence of zero incidents. Add a cited incident if the reporting supports one.</td></tr> : null}
+        </tbody>
+      </table>
+    </div>
+    {showAdd ? <div className="grid gap-3 border-t border-border bg-muted/20 p-4 md:grid-cols-2">
+      <input type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} className="border border-input bg-background px-3 py-2" aria-label="Incident date" />
+      <input value={draft.location} onChange={(e) => setDraft({ ...draft, location: e.target.value })} placeholder="Location" className="border border-input bg-background px-3 py-2" />
+      <div className="border border-input bg-background px-3 py-2 text-xs text-muted-foreground md:col-span-2">Parties: <span className="font-semibold text-foreground">{answer.requestedParties.join(' / ')}</span></div>
+      <select value={draft.sourceFileId} onChange={(e) => setDraft({ ...draft, sourceFileId: e.target.value })} className="border border-input bg-background px-3 py-2 md:col-span-2" aria-label="Supporting source">
+        <option value="">Select a supporting source</option>
+        {session.sourceFiles.filter((source) => session.assessment!.selectedSourceFileIds.includes(source.id) && source.contentDepth !== 'METADATA').map((source) => <option key={source.id} value={source.id}>[{session.sourceFiles.indexOf(source) + 1}] {source.source}: {source.title}</option>)}
+      </select>
+      <textarea value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="Paste the supporting incident sentence from the selected source" className="border border-input bg-background px-3 py-2 md:col-span-2" />
+      <div className="flex gap-2 md:col-span-2"><button onClick={addIncident} className="bg-primary px-3 py-2 font-semibold text-primary-foreground">Add incident</button><button onClick={() => setShowAdd(false)} className="border border-input px-3 py-2">Cancel</button></div>
+    </div> : null}
+    <div className="flex flex-wrap justify-between gap-3 border-t border-border p-4"><button onClick={() => setShowAdd(true)} className="inline-flex items-center gap-2 border border-input px-3 py-2 font-semibold"><Plus size={14} />Add incident</button><div className="flex items-center gap-2">{hasUncitedIncludedIncident ? <span className="text-xs text-[hsl(5_69%_40%)]">Add citations before finalizing.</span> : null}<button onClick={() => save(false)} disabled={updateReview.isPending} className="border border-input px-3 py-2 font-semibold">Save review</button><button onClick={() => save(true)} disabled={updateReview.isPending || hasUncitedIncludedIncident || !hasSupportedAnswer} className="bg-[hsl(174_44%_32%)] px-3 py-2 font-semibold text-white disabled:opacity-45">{answer.finalized ? 'Finalized' : 'Finalize count'}</button></div></div>
+  </div>;
+}
+
+function AssessmentSummary({ session, onUpdated }: { session: AnalysisSession; onUpdated: (session: AnalysisSession) => void }) {
+  const assessment = session.assessment!;
   const historyQuery = useListHistoricalRatings();
   const historicalRatings = assessment.historicalRatings?.length ? assessment.historicalRatings : (historyQuery.data ?? []);
 
@@ -331,6 +398,7 @@ function AssessmentSummary({ assessment }: { assessment: NonNullable<AnalysisSes
       </div>
     </div>
     <p className="mt-4 max-w-3xl text-sm leading-6 text-foreground/80">{assessment.summary}</p>
+    {assessment.countAnswer ? <CountAnswerReview session={session} onUpdated={onUpdated} /> : null}
     
     {assessment.methodology && (
       <div className="mt-4 border-l-2 border-[hsl(174_44%_43%_/_0.5)] pl-3 text-xs italic leading-5 text-muted-foreground max-w-3xl">

@@ -14,6 +14,9 @@ import {
   RunResearchBody,
   RunResearchParams,
   RunResearchResponse,
+  UpdateIncidentReviewBody,
+  UpdateIncidentReviewParams,
+  UpdateIncidentReviewResponse,
 } from "@workspace/api-zod";
 import {
   assessSession,
@@ -21,10 +24,13 @@ import {
   getSession,
   listSessions,
   runSessionResearch,
+  updateIncidentReview,
 } from "../lib/analysis-store";
 import {
   evaluationVectors,
   historicalRatings,
+  deduplicateIncidents,
+  incidentCitationError,
 } from "../lib/analysis-engine";
 import { sourceConnectors } from "../lib/source-adapters";
 import { isKnownSourceConnector } from "../lib/source-adapters";
@@ -144,6 +150,60 @@ router.post("/analysis-sessions/:sessionId/assessment", (req, res) => {
     return;
   }
   res.json(CreateAssessmentResponse.parse(session));
+});
+
+router.patch("/analysis-sessions/:sessionId/assessment", (req, res) => {
+  const params = UpdateIncidentReviewParams.safeParse(req.params);
+  const body = UpdateIncidentReviewBody.safeParse(req.body);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+  const existing = getSession(params.data.sessionId);
+  if (!existing?.assessment?.countAnswer) {
+    res.status(404).json({ error: "Count assessment not found" });
+    return;
+  }
+  const selectedSourceIds = new Set(existing.assessment.selectedSourceFileIds);
+  const selectedSources = existing.sourceFiles.filter((file) => selectedSourceIds.has(file.id));
+  const validSourceIds = new Set(selectedSources.map((file) => file.id));
+  if (body.data.incidents.some((incident) =>
+    incident.sourceFileIds.some((sourceId) => !validSourceIds.has(sourceId))
+  )) {
+    res.status(400).json({ error: "An incident cites a source outside the selected evidence set" });
+    return;
+  }
+  const normalizedIncidents = deduplicateIncidents(body.data.incidents);
+  const citationError = normalizedIncidents
+    .filter((incident) => incident.status === "INCLUDED")
+    .map((incident) => incidentCitationError(
+      incident,
+      selectedSources,
+      existing.assessment!.countAnswer!.requestedParties,
+      existing.assessment!.countAnswer!.dateRange,
+    ))
+    .find(Boolean);
+  if (citationError) {
+    res.status(400).json({ error: citationError });
+    return;
+  }
+  if (
+    body.data.finalized &&
+    !normalizedIncidents.some((incident) => incident.status === "INCLUDED")
+  ) {
+    res.status(400).json({ error: "Insufficient evidence cannot be finalized as a factual zero" });
+    return;
+  }
+  const session = updateIncidentReview(
+    params.data.sessionId,
+    normalizedIncidents,
+    body.data.finalized,
+  );
+  res.json(UpdateIncidentReviewResponse.parse(session));
 });
 
 router.get("/source-connectors", (_req, res) => {

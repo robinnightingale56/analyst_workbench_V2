@@ -1,0 +1,333 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { buildCountAnswer, deduplicateIncidents, incidentCitationError, type Incident } from "./analysis-engine";
+import { parseBingNewsRss } from "./source-adapters";
+
+function source(id: string, content: string, publishedAt = "2026-09-14T12:00:00Z") {
+  return {
+    id,
+    title: "Border reporting",
+    source: `Outlet ${id}`,
+    sourceType: "NEWS" as const,
+    publishedAt,
+    relevance: 0.9,
+    reliability: "MODERATE" as const,
+    bluf: content,
+    keyPoints: [],
+    tags: [],
+    url: `https://example.com/${id}`,
+    content,
+    contentDepth: "FULL_TEXT" as const,
+  };
+}
+
+const question = "How many times did Country Alpha and Country Beta clash?";
+
+test("does not create a count answer for a non-count assessment", () => {
+  assert.equal(
+    buildCountAnswer("Assess the implications of the border situation.", [
+      source("a", "Country Alpha and Country Beta clashed on 12 September 2026."),
+    ]),
+    null,
+  );
+});
+
+test("supports have-clashed count wording with cited results", () => {
+  const answer = buildCountAnswer(
+    "How many times have Country Alpha and Country Beta clashed?",
+    [source("a", "Country Alpha and Country Beta clashed at North Ridge on 12 September 2026.")],
+  );
+  assert.equal(answer?.provisionalCount, 1);
+  assert.deepEqual(answer?.incidents[0]?.sourceFileIds, ["a"]);
+});
+
+test("supports subject-event-object count wording", () => {
+  const answer = buildCountAnswer(
+    "How many times did Country Alpha clash with Country Beta?",
+    [source("a", "Country Alpha and Country Beta clashed at North Ridge on 12 September 2026.")],
+  );
+  assert.equal(answer?.provisionalCount, 1);
+  assert.deepEqual(answer?.incidents[0]?.sourceFileIds, ["a"]);
+});
+
+test("parses and applies a requested year separately from party names", () => {
+  const answer = buildCountAnswer(
+    "How many times did Country Alpha clash with Country Beta in 2025?",
+    [
+      source("a", "Country Alpha and Country Beta clashed at North Ridge on 12 September 2025."),
+      source("b", "Country Alpha and Country Beta clashed at South Pass on 12 September 2026."),
+    ],
+  );
+  assert.deepEqual(answer?.requestedParties, ["Country Alpha", "Country Beta"]);
+  assert.deepEqual(answer?.dateRange, { startDate: "2025-01-01", endDate: "2025-12-31" });
+  assert.equal(answer?.provisionalCount, 1);
+  assert.deepEqual(answer?.incidents[0]?.sourceFileIds, ["a"]);
+});
+
+test("live-shaped Bing excerpt flows from connector parsing into a cited count", () => {
+  const xml = `<rss><channel><item>
+    <title>Country Alpha and Country Beta clash at North Ridge</title>
+    <link>https://www.bing.com/news/apiclick.aspx?id=example</link>
+    <description>Officials reported that Country Alpha and Country Beta clashed at North Ridge on 12 September 2025, ending after a brief exchange of fire.</description>
+    <pubDate>Sat, 13 Sep 2025 12:00:00 GMT</pubDate>
+    <News:Source>Example News</News:Source>
+  </item></channel></rss>`;
+  const sources = parseBingNewsRss(xml, question, 5, "2025-09-13T12:00:00Z");
+  assert.equal(sources[0]?.contentDepth, "EXCERPT");
+  const answer = buildCountAnswer(question, sources);
+  assert.equal(answer?.provisionalCount, 1);
+  assert.deepEqual(answer?.incidents[0]?.sourceFileIds, [sources[0]?.id]);
+});
+
+test("supports count-between wording", () => {
+  const answer = buildCountAnswer(
+    "What is the number of clashes between Country Alpha and Country Beta?",
+    [source("a", "Country Alpha and Country Beta clashed at North Ridge on 12 September 2026.")],
+  );
+  assert.equal(answer?.provisionalCount, 1);
+});
+
+const vocabularyCases = [
+  {
+    name: "fight and fought",
+    question: "How many times did Country Alpha and Country Beta fight?",
+    evidence: "Country Alpha and Country Beta fought at North Ridge on 12 September 2026.",
+  },
+];
+
+for (const vocabularyCase of vocabularyCases) {
+  test(`uses shared event vocabulary for ${vocabularyCase.name}`, () => {
+    const answer = buildCountAnswer(
+      vocabularyCase.question,
+      [source("a", vocabularyCase.evidence)],
+    );
+    assert.equal(answer?.provisionalCount, 1);
+    assert.deepEqual(answer?.incidents[0]?.sourceFileIds, ["a"]);
+  });
+}
+
+test("ambiguous party wording yields no count answer", () => {
+  assert.equal(
+    buildCountAnswer(
+      "How many times did two countries clash?",
+      [source("a", "Country Alpha and Country Beta clashed at North Ridge on 12 September 2026.")],
+    ),
+    null,
+  );
+});
+
+test("generic incident questions are not treated as physical-clash counts", () => {
+  assert.equal(
+    buildCountAnswer(
+      "How many incidents were there between Country Alpha and Country Beta?",
+      [source("a", "Country Alpha and Country Beta had a diplomatic incident on 12 September 2026.")],
+    ),
+    null,
+  );
+});
+
+test("a diplomatic incident does not satisfy a clash-count question", () => {
+  const answer = buildCountAnswer(question, [
+    source("a", "Country Alpha and Country Beta had a diplomatic incident on 12 September 2026."),
+  ]);
+  assert.equal(answer?.answerStatus, "INSUFFICIENT_EVIDENCE");
+});
+
+test("excludes reports that do not support both requested parties", () => {
+  const answer = buildCountAnswer(question, [
+    source("a", "Country Gamma and Country Delta clashed on 12 September 2026."),
+  ]);
+  assert.equal(answer?.provisionalCount, 0);
+});
+
+test("does not borrow requested parties from adjacent context", () => {
+  const answer = buildCountAnswer(question, [
+    source(
+      "a",
+      "Country Alpha and Country Beta held talks. Country Gamma and Country Delta clashed at North Ridge on 12 September 2026.",
+    ),
+  ]);
+  assert.equal(answer?.provisionalCount, 0);
+});
+
+test("does not treat a party mentioned as speaker as an event participant", () => {
+  const answer = buildCountAnswer(question, [
+    source(
+      "a",
+      "Country Alpha said Country Beta clashed with Country Gamma at North Ridge on 12 September 2026.",
+    ),
+  ]);
+  assert.equal(answer?.answerStatus, "INSUFFICIENT_EVIDENCE");
+});
+
+test("excludes undated incidents rather than substituting publication time", () => {
+  const answer = buildCountAnswer(question, [
+    source("a", "Country Alpha and Country Beta clashed near North Ridge."),
+  ]);
+  assert.equal(answer?.provisionalCount, 0);
+});
+
+test("rejects negated and speculative event claims", () => {
+  const answer = buildCountAnswer(question, [
+    source("a", "Country Alpha and Country Beta did not clash at North Ridge on 12 September 2026."),
+    source("b", "Country Alpha and Country Beta may clash at South Pass on 13 September 2026."),
+  ]);
+  assert.equal(answer?.answerStatus, "INSUFFICIENT_EVIDENCE");
+  assert.equal(answer?.incidents.length, 0);
+});
+
+test("metadata-only discovery records do not produce a factual zero", () => {
+  const metadataSource = {
+    ...source("a", "Country Alpha and Country Beta clashed at North Ridge on 12 September 2026."),
+    contentDepth: "METADATA" as const,
+  };
+  const answer = buildCountAnswer(question, [metadataSource]);
+  assert.equal(answer?.answerStatus, "INSUFFICIENT_EVIDENCE");
+  assert.equal(answer?.incidents.length, 0);
+});
+
+test("a supporting headline with non-supporting content is not counted", () => {
+  const headlineOnly = {
+    ...source("a", "Officials met for scheduled talks on 12 September 2026."),
+    title: "Country Alpha and Country Beta clashed at North Ridge on 12 September 2026",
+  };
+  const answer = buildCountAnswer(question, [headlineOnly]);
+  assert.equal(answer?.answerStatus, "INSUFFICIENT_EVIDENCE");
+  assert.equal(answer?.incidents.length, 0);
+});
+
+const reviewedIncident: Incident = {
+  id: "reviewed",
+  date: "2026-09-12T00:00:00.000Z",
+  location: "North Ridge",
+  parties: ["Country Alpha", "Country Beta"],
+  description: "Country Alpha and Country Beta clashed at North Ridge.",
+  sourceFileIds: ["a"],
+  status: "INCLUDED",
+};
+
+test("finalization accepts selected evidence that supports the incident", () => {
+  assert.equal(
+    incidentCitationError(reviewedIncident, [
+      source("a", "Country Alpha and Country Beta clashed at North Ridge on 12 September 2026."),
+    ]),
+    null,
+  );
+});
+
+test("finalization rejects unselected and metadata-only citations", () => {
+  assert.match(incidentCitationError(reviewedIncident, []) ?? "", /selected evidence/);
+  assert.match(
+    incidentCitationError(reviewedIncident, [{
+      ...source("a", "Country Alpha and Country Beta clashed at North Ridge on 12 September 2026."),
+      contentDepth: "METADATA",
+    }]) ?? "",
+    /Metadata-only/,
+  );
+});
+
+test("finalization rejects a citation that does not support the incident", () => {
+  assert.match(
+    incidentCitationError(reviewedIncident, [
+      source("a", "Country Alpha and Country Beta clashed at South Pass on 12 September 2026."),
+    ]) ?? "",
+    /does not support/,
+  );
+});
+
+test("provisional review rejects a description not supported by the citation", () => {
+  const supportingSource = source(
+    "a",
+    "Country Alpha and Country Beta clashed at North Ridge on 12 September 2026 after a patrol encounter.",
+  );
+  assert.match(
+    incidentCitationError(
+      { ...reviewedIncident, description: "The clash destroyed five aircraft and closed the airport." },
+      [supportingSource],
+      ["Country Alpha", "Country Beta"],
+    ) ?? "",
+    /does not support/,
+  );
+});
+
+test("finalization rejects replaced or empty parties", () => {
+  const supportingSource = source(
+    "a",
+    "Country Alpha and Country Beta clashed at North Ridge on 12 September 2026.",
+  );
+  assert.match(
+    incidentCitationError(
+      { ...reviewedIncident, parties: ["Country Gamma", "Country Delta"] },
+      [supportingSource],
+      ["Country Alpha", "Country Beta"],
+    ) ?? "",
+    /must match/,
+  );
+  assert.match(
+    incidentCitationError(
+      { ...reviewedIncident, parties: ["", "Country Beta"] },
+      [supportingSource],
+      ["Country Alpha", "Country Beta"],
+    ) ?? "",
+    /must match/,
+  );
+});
+
+test("extracts multiple dated incidents from one report", () => {
+  const answer = buildCountAnswer(question, [
+    source(
+      "a",
+      "Country Alpha and Country Beta clashed near North Ridge on 10 September 2026. Country Alpha and Country Beta exchanged fire at South Pass on 13 September 2026.",
+    ),
+  ]);
+  assert.equal(answer?.provisionalCount, 2);
+});
+
+test("keeps adjacent-day incidents at different locations distinct", () => {
+  const answer = buildCountAnswer(question, [
+    source(
+      "a",
+      "Country Alpha and Country Beta clashed at North Ridge on 12 September 2026. Country Alpha and Country Beta clashed at South Pass on 13 September 2026.",
+    ),
+  ]);
+  assert.equal(answer?.provisionalCount, 2);
+});
+
+test("keeps cross-source incidents with different stated event dates distinct", () => {
+  const answer = buildCountAnswer(question, [
+    source("a", "Country Alpha and Country Beta clashed at North Ridge on 12 September 2026."),
+    source("b", "Country Alpha and Country Beta clashed at North Ridge on 13 September 2026."),
+  ]);
+  assert.equal(answer?.provisionalCount, 2);
+});
+
+test("consolidates duplicate reports and preserves both citations", () => {
+  const answer = buildCountAnswer(question, [
+    source("a", "Country Alpha and Country Beta clashed at North Ridge on 12 September 2026."),
+    source("b", "Country Alpha and Country Beta clashed at North Ridge on 12 September 2026."),
+  ]);
+  assert.equal(answer?.provisionalCount, 1);
+  assert.deepEqual(answer?.incidents[0]?.sourceFileIds.sort(), ["a", "b"]);
+});
+
+test("repeated mentions in one source do not create duplicate citations", () => {
+  const answer = buildCountAnswer(question, [
+    source(
+      "a",
+      "Country Alpha and Country Beta clashed at North Ridge on 12 September 2026. Country Alpha and Country Beta clashed at North Ridge on 12 September 2026.",
+    ),
+  ]);
+  assert.equal(answer?.provisionalCount, 1);
+  assert.deepEqual(answer?.incidents[0]?.sourceFileIds, ["a"]);
+});
+
+test("review updates cannot inflate the count with duplicate incidents", () => {
+  const duplicate = {
+    ...reviewedIncident,
+    id: "duplicate",
+    sourceFileIds: ["a"],
+  };
+  const normalized = deduplicateIncidents([reviewedIncident, duplicate]);
+  assert.equal(normalized.length, 1);
+  assert.deepEqual(normalized[0]?.sourceFileIds, ["a"]);
+});
