@@ -7,7 +7,9 @@
     "dev": "vite dev",
     "build": "vite build",
     "validate:bundle": "vite build || (echo 'Canvas bundle validation failed. Re-run: pnpm --filter @workspace/mockup-sandbox run validate:bundle' >&2; exit 1)",
+    "validate:bundle:all": "env -u PORT -u BASE_PATH pnpm run validate:bundle && PORT=5173 BASE_PATH=/__mockup/ pnpm run validate:bundle",
     "preview": "vite preview",
+    "test:asset-path": "vitest run --config vitest.config.ts canvas-asset-path.test.ts",
     "test:port": "vitest run --config vitest.config.ts port-config.test.ts",
     "validate:port": "vitest run --config vitest.config.ts port-config.test.ts || (echo 'Canvas port behavior validation failed. Re-run: pnpm --filter @workspace/mockup-sandbox run validate:port' >&2; exit 1)",
     "typecheck": "tsc -p tsconfig.json --noEmit"

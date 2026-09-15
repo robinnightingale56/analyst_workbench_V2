@@ -9,6 +9,7 @@
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config vitest.config.ts",
+    "test:port": "vitest run --config vitest.config.ts port-config.test.ts",
     "test:asset-path": "vitest run --config vitest.config.ts asset-path.test.ts"
   },
   "devDependencies": {
