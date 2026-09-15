@@ -220,7 +220,7 @@ function Home() {
 
   useEffect(() => {
     if (!connectorsQuery.data?.length || selectedConnectors.length > 0) return;
-    const permittedMode = classification === 'UNCLASSIFIED' ? 'LIVE' : 'SYNTHETIC';
+    const permittedMode = classification === 'UNCLASSIFIED' ? 'LIVE' : 'DEMONSTRATION';
     setSelectedConnectors(
       connectorsQuery.data
         .filter((connector) => connector.status === 'READY' && connector.mode === permittedMode)

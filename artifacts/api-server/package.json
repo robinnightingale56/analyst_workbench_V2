@@ -4,14 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
-    "build": "node ./build.mjs",
-    "start": "node --enable-source-maps ./dist/index.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "pretest": "pnpm --filter @workspace/db push",
-    "test": "pnpm run test:contract & first=$!; pnpm run test:contract & second=$!; status=0; wait \"$first\" || status=$?; wait \"$second\" || status=$?; exit \"$status\"",
-    "test:contract": "tmp=\"/tmp/analysis-engine.test.$$.cjs\"; trap 'rm -f \"$tmp\"' EXIT; esbuild src/lib/analysis-engine.test.ts --bundle --platform=node --format=cjs --outfile=\"$tmp\" && NODE_ENV=production node --test \"$tmp\"",
-    "test:concurrent": "pnpm test"
+    "dev": "uvicorn api_server.main:app --app-dir src --host 0.0.0.0 --port ${PORT:-8080}",
+    "build": "python -m compileall -q src/api_server",
+    "start": "uvicorn api_server.main:app --app-dir src --host 0.0.0.0 --port ${PORT:-8080}",
+    "typecheck": "python -m compileall -q src/api_server",
+    "test": "pytest -q",
+    "test:contract": "pytest -q",
+    "test:concurrent": "pytest -q"
   },
   "dependencies": {
     "@workspace/api-zod": "workspace:*",
