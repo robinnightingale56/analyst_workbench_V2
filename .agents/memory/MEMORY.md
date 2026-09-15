@@ -1,1 +1,2 @@
 - [Factual count evidence](factual-count-evidence.md) — count answers require affirmative incident-level support; absence of extractable evidence is never a factual zero.
+- [Generated declaration freshness](generated-declaration-freshness.md) — library type checks must rebuild ignored declarations despite stale incremental metadata.
