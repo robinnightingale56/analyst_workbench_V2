@@ -65,6 +65,7 @@ export async function createViteConfig(env: NodeJS.ProcessEnv) {
     },
     preview: {
       ...(port === undefined ? {} : { port }),
+      strictPort: true,
       host: '0.0.0.0',
       allowedHosts: true,
     },
