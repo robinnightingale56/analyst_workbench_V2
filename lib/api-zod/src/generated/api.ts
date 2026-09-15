@@ -55,6 +55,11 @@ export const listAnalysisSessionsResponseAssessmentOneCountAnswerOneProvisionalC
 
 
 
+export const listAnalysisSessionsResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemStartCharMin = 0;
+
+export const listAnalysisSessionsResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemEndCharMin = 0;
+
+
 
 
 export const ListAnalysisSessionsResponseItem = zod.object({
@@ -142,6 +147,12 @@ export const ListAnalysisSessionsResponseItem = zod.object({
   "parties": zod.array(zod.string().min(1)),
   "description": zod.string(),
   "sourceFileIds": zod.array(zod.string()),
+  "evidenceSpans": zod.array(zod.object({
+  "sourceFileId": zod.string(),
+  "text": zod.string().min(1),
+  "startChar": zod.number().int().min(listAnalysisSessionsResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemStartCharMin),
+  "endChar": zod.number().int().min(listAnalysisSessionsResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemEndCharMin)
+})).optional(),
   "status": zod.enum(['INCLUDED', 'EXCLUDED'])
 }))
 }),zod.null()])
@@ -190,6 +201,11 @@ export const createAnalysisSessionResponseAssessmentOneCountAnswerOneRequestedPa
 
 export const createAnalysisSessionResponseAssessmentOneCountAnswerOneProvisionalCountMin = 0;
 
+
+
+export const createAnalysisSessionResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemStartCharMin = 0;
+
+export const createAnalysisSessionResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemEndCharMin = 0;
 
 
 
@@ -279,6 +295,12 @@ export const CreateAnalysisSessionResponse = zod.object({
   "parties": zod.array(zod.string().min(1)),
   "description": zod.string(),
   "sourceFileIds": zod.array(zod.string()),
+  "evidenceSpans": zod.array(zod.object({
+  "sourceFileId": zod.string(),
+  "text": zod.string().min(1),
+  "startChar": zod.number().int().min(createAnalysisSessionResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemStartCharMin),
+  "endChar": zod.number().int().min(createAnalysisSessionResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemEndCharMin)
+})).optional(),
   "status": zod.enum(['INCLUDED', 'EXCLUDED'])
 }))
 }),zod.null()])
@@ -319,6 +341,11 @@ export const getAnalysisSessionResponseAssessmentOneCountAnswerOneRequestedParti
 
 export const getAnalysisSessionResponseAssessmentOneCountAnswerOneProvisionalCountMin = 0;
 
+
+
+export const getAnalysisSessionResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemStartCharMin = 0;
+
+export const getAnalysisSessionResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemEndCharMin = 0;
 
 
 
@@ -408,6 +435,12 @@ export const GetAnalysisSessionResponse = zod.object({
   "parties": zod.array(zod.string().min(1)),
   "description": zod.string(),
   "sourceFileIds": zod.array(zod.string()),
+  "evidenceSpans": zod.array(zod.object({
+  "sourceFileId": zod.string(),
+  "text": zod.string().min(1),
+  "startChar": zod.number().int().min(getAnalysisSessionResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemStartCharMin),
+  "endChar": zod.number().int().min(getAnalysisSessionResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemEndCharMin)
+})).optional(),
   "status": zod.enum(['INCLUDED', 'EXCLUDED'])
 }))
 }),zod.null()])
@@ -456,6 +489,11 @@ export const updateAnalysisSessionArchiveResponseAssessmentOneCountAnswerOneRequ
 
 export const updateAnalysisSessionArchiveResponseAssessmentOneCountAnswerOneProvisionalCountMin = 0;
 
+
+
+export const updateAnalysisSessionArchiveResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemStartCharMin = 0;
+
+export const updateAnalysisSessionArchiveResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemEndCharMin = 0;
 
 
 
@@ -545,6 +583,12 @@ export const UpdateAnalysisSessionArchiveResponse = zod.object({
   "parties": zod.array(zod.string().min(1)),
   "description": zod.string(),
   "sourceFileIds": zod.array(zod.string()),
+  "evidenceSpans": zod.array(zod.object({
+  "sourceFileId": zod.string(),
+  "text": zod.string().min(1),
+  "startChar": zod.number().int().min(updateAnalysisSessionArchiveResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemStartCharMin),
+  "endChar": zod.number().int().min(updateAnalysisSessionArchiveResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemEndCharMin)
+})).optional(),
   "status": zod.enum(['INCLUDED', 'EXCLUDED'])
 }))
 }),zod.null()])
@@ -594,6 +638,11 @@ export const runResearchResponseAssessmentOneCountAnswerOneRequestedPartiesMin =
 
 export const runResearchResponseAssessmentOneCountAnswerOneProvisionalCountMin = 0;
 
+
+
+export const runResearchResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemStartCharMin = 0;
+
+export const runResearchResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemEndCharMin = 0;
 
 
 
@@ -683,6 +732,12 @@ export const RunResearchResponse = zod.object({
   "parties": zod.array(zod.string().min(1)),
   "description": zod.string(),
   "sourceFileIds": zod.array(zod.string()),
+  "evidenceSpans": zod.array(zod.object({
+  "sourceFileId": zod.string(),
+  "text": zod.string().min(1),
+  "startChar": zod.number().int().min(runResearchResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemStartCharMin),
+  "endChar": zod.number().int().min(runResearchResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemEndCharMin)
+})).optional(),
   "status": zod.enum(['INCLUDED', 'EXCLUDED'])
 }))
 }),zod.null()])
@@ -727,6 +782,11 @@ export const createAssessmentResponseAssessmentOneCountAnswerOneRequestedParties
 
 export const createAssessmentResponseAssessmentOneCountAnswerOneProvisionalCountMin = 0;
 
+
+
+export const createAssessmentResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemStartCharMin = 0;
+
+export const createAssessmentResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemEndCharMin = 0;
 
 
 
@@ -816,6 +876,12 @@ export const CreateAssessmentResponse = zod.object({
   "parties": zod.array(zod.string().min(1)),
   "description": zod.string(),
   "sourceFileIds": zod.array(zod.string()),
+  "evidenceSpans": zod.array(zod.object({
+  "sourceFileId": zod.string(),
+  "text": zod.string().min(1),
+  "startChar": zod.number().int().min(createAssessmentResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemStartCharMin),
+  "endChar": zod.number().int().min(createAssessmentResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemEndCharMin)
+})).optional(),
   "status": zod.enum(['INCLUDED', 'EXCLUDED'])
 }))
 }),zod.null()])
@@ -838,6 +904,11 @@ export const UpdateIncidentReviewParams = zod.object({
 export const updateIncidentReviewBodyIncidentsItemPartiesMin = 2;
 
 
+export const updateIncidentReviewBodyIncidentsItemEvidenceSpansItemStartCharMin = 0;
+
+export const updateIncidentReviewBodyIncidentsItemEvidenceSpansItemEndCharMin = 0;
+
+
 
 export const UpdateIncidentReviewBody = zod.object({
   "expectedVersion": zod.number().int().min(1),
@@ -849,6 +920,12 @@ export const UpdateIncidentReviewBody = zod.object({
   "parties": zod.array(zod.string().min(1)).min(updateIncidentReviewBodyIncidentsItemPartiesMin),
   "description": zod.string(),
   "sourceFileIds": zod.array(zod.string()),
+  "evidenceSpans": zod.array(zod.object({
+  "sourceFileId": zod.string(),
+  "text": zod.string().min(1),
+  "startChar": zod.number().int().min(updateIncidentReviewBodyIncidentsItemEvidenceSpansItemStartCharMin),
+  "endChar": zod.number().int().min(updateIncidentReviewBodyIncidentsItemEvidenceSpansItemEndCharMin)
+})).optional(),
   "status": zod.enum(['INCLUDED', 'EXCLUDED'])
 }))
 })
@@ -876,6 +953,11 @@ export const updateIncidentReviewResponseAssessmentOneCountAnswerOneRequestedPar
 
 export const updateIncidentReviewResponseAssessmentOneCountAnswerOneProvisionalCountMin = 0;
 
+
+
+export const updateIncidentReviewResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemStartCharMin = 0;
+
+export const updateIncidentReviewResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemEndCharMin = 0;
 
 
 
@@ -965,6 +1047,12 @@ export const UpdateIncidentReviewResponse = zod.object({
   "parties": zod.array(zod.string().min(1)),
   "description": zod.string(),
   "sourceFileIds": zod.array(zod.string()),
+  "evidenceSpans": zod.array(zod.object({
+  "sourceFileId": zod.string(),
+  "text": zod.string().min(1),
+  "startChar": zod.number().int().min(updateIncidentReviewResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemStartCharMin),
+  "endChar": zod.number().int().min(updateIncidentReviewResponseAssessmentOneCountAnswerOneIncidentsItemEvidenceSpansItemEndCharMin)
+})).optional(),
   "status": zod.enum(['INCLUDED', 'EXCLUDED'])
 }))
 }),zod.null()])

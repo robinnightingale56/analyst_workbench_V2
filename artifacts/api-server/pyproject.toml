@@ -16,6 +16,8 @@ dependencies = [
   "trafilatura",
   "beautifulsoup4",
   "lxml",
+  "spacy",
+  "scikit-learn",
   "structlog",
 ]
 

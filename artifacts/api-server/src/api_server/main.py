@@ -145,6 +145,20 @@ async def patch_review(sessionId: str, body: IncidentReview):
     if any(source_id not in selected_ids for incident in body.incidents for source_id in incident.sourceFileIds):
         return _error("An incident cites a source outside the selected evidence set", 400)
     normalized = deduplicate_incidents(body.incidents)
+    if body.finalized:
+        for incident in normalized:
+            if incident["status"] != "INCLUDED":
+                continue
+            cited = set(incident["sourceFileIds"])
+            spanned = {
+                span["sourceFileId"]
+                for span in incident.get("evidenceSpans", [])
+            }
+            if cited != spanned:
+                return _error(
+                    "Every included incident requires an exact evidence span for each citation",
+                    400,
+                )
     answer = existing["assessment"]["countAnswer"]
     citation = next((incident_citation_error(x, selected, answer["requestedParties"], answer["dateRange"]) for x in normalized if x["status"] == "INCLUDED"), None)
     if citation:

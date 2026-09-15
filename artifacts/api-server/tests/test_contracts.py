@@ -114,6 +114,36 @@ def test_http_research_and_assessment_flow_returns_compatible_session():
         assert assessment["countAnswer"]["answerStatus"] == "SUPPORTED"
         assert assessment["countAnswer"]["provisionalCount"] == 1
 
+        assessed_session = assessed.json()
+        incidents = assessment["countAnswer"]["incidents"]
+        without_spans = [
+            {key: value for key, value in incident.items() if key != "evidenceSpans"}
+            for incident in incidents
+        ]
+        rejected = client.patch(
+            f"/api/analysis-sessions/{session['id']}/assessment",
+            json={
+                "expectedVersion": assessed_session["version"],
+                "finalized": True,
+                "incidents": without_spans,
+            },
+        )
+        assert rejected.status_code == 400
+        assert rejected.json() == {
+            "error": "Every included incident requires an exact evidence span for each citation"
+        }
+
+        finalized = client.patch(
+            f"/api/analysis-sessions/{session['id']}/assessment",
+            json={
+                "expectedVersion": assessed_session["version"],
+                "finalized": True,
+                "incidents": incidents,
+            },
+        )
+        assert finalized.status_code == 200
+        assert finalized.json()["assessment"]["countAnswer"]["finalized"] is True
+
 
 @pytest.mark.parametrize("run_id", ["", " \t\n "])
 def test_api_rejects_blank_contract_test_run_ids(run_id):

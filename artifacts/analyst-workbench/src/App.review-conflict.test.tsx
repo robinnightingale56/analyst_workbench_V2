@@ -23,6 +23,12 @@ const originalServerIncident = {
   parties: ['Party A'],
   description: 'Original server review incident',
   sourceFileIds: ['source-1'],
+  evidenceSpans: [{
+    sourceFileId: 'source-1',
+    text: 'Original server review incident',
+    startChar: 0,
+    endChar: 31,
+  }],
   status: 'INCLUDED' as const,
 };
 
@@ -41,7 +47,8 @@ function makeSession(incidents = [originalServerIncident], version = 1) {
       source: 'Test source',
       title: 'Test report',
       url: 'https://example.com/report',
-      contentDepth: 'FULL',
+      contentDepth: 'FULL_TEXT',
+      content: 'Original server review incident. Exact supporting sentence.',
     }],
     assessment: {
       selectedSourceFileIds: ['source-1'],
@@ -141,5 +148,56 @@ describe('CountAnswerReview conflict handling', () => {
     await waitFor(() => expect(getAnalysisSession).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.getByText('Current server review incident')).toBeTruthy());
     expect(onUpdated).toHaveBeenCalledWith(currentServerSession);
+  });
+
+  it('creates exact evidence spans for analyst-added incidents before finalizing', () => {
+    render(<CountAnswerReview session={makeSession([])} onUpdated={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add incident' }));
+    fireEvent.change(screen.getByLabelText('Incident date'), { target: { value: '2026-09-14' } });
+    fireEvent.change(screen.getByPlaceholderText('Location'), { target: { value: 'Test location' } });
+    fireEvent.change(screen.getByLabelText('Supporting source'), { target: { value: 'source-1' } });
+    fireEvent.change(
+      screen.getByPlaceholderText('Paste the supporting incident sentence from the selected source'),
+      { target: { value: 'Exact supporting sentence' } },
+    );
+    fireEvent.click(screen.getByTestId('button-submit-incident'));
+    fireEvent.click(screen.getByRole('button', { name: 'Finalize count' }));
+
+    expect(mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          finalized: true,
+          incidents: [expect.objectContaining({
+            evidenceSpans: [{
+              sourceFileId: 'source-1',
+              text: 'Exact supporting sentence',
+              startChar: 33,
+              endChar: 58,
+            }],
+          })],
+        }),
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it('blocks analyst-added evidence that is not an exact source match', () => {
+    render(<CountAnswerReview session={makeSession([])} onUpdated={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add incident' }));
+    fireEvent.change(screen.getByLabelText('Incident date'), { target: { value: '2026-09-14' } });
+    fireEvent.change(screen.getByPlaceholderText('Location'), { target: { value: 'Test location' } });
+    fireEvent.change(screen.getByLabelText('Supporting source'), { target: { value: 'source-1' } });
+    fireEvent.change(
+      screen.getByPlaceholderText('Paste the supporting incident sentence from the selected source'),
+      { target: { value: 'Paraphrased evidence' } },
+    );
+    fireEvent.click(screen.getByTestId('button-submit-incident'));
+
+    expect(screen.getByTestId('error-incident-evidence').textContent).toContain(
+      'exact supporting sentence',
+    );
+    expect(mutate).not.toHaveBeenCalled();
   });
 });

@@ -39,6 +39,13 @@ class SourceFile(BaseModel):
     contentDepth: Literal["FULL_TEXT", "EXCERPT", "METADATA"]
 
 
+class EvidenceSpan(BaseModel):
+    sourceFileId: str
+    text: str
+    startChar: int = Field(ge=0)
+    endChar: int = Field(ge=0)
+
+
 class Incident(BaseModel):
     id: str
     date: str
@@ -46,6 +53,7 @@ class Incident(BaseModel):
     parties: list[str] = Field(min_length=2)
     description: str
     sourceFileIds: list[str]
+    evidenceSpans: list[EvidenceSpan] = Field(default_factory=list)
     status: Literal["INCLUDED", "EXCLUDED"]
 
     @field_validator("parties")

@@ -58,6 +58,16 @@ export interface AssessmentInput {
   selectedSourceFileIds: string[];
 }
 
+export interface EvidenceSpan {
+  sourceFileId: string;
+  /** @minLength 1 */
+  text: string;
+  /** @minimum 0 */
+  startChar: number;
+  /** @minimum 0 */
+  endChar: number;
+}
+
 export type IncidentReviewInputStatus = typeof IncidentReviewInputStatus[keyof typeof IncidentReviewInputStatus];
 
 
@@ -77,6 +87,7 @@ export interface IncidentReviewInput {
   parties: string[];
   description: string;
   sourceFileIds: string[];
+  evidenceSpans?: EvidenceSpan[];
   status: IncidentReviewInputStatus;
 }
 
@@ -326,6 +337,7 @@ export interface Incident {
   parties: string[];
   description: string;
   sourceFileIds: string[];
+  evidenceSpans?: EvidenceSpan[];
   status: IncidentStatus;
 }
 

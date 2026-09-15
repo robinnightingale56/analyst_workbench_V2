@@ -329,6 +329,10 @@ components:
           type: array
           items:
             type: string
+        evidenceSpans:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvidenceSpan"
         status:
           type: string
           enum: [INCLUDED, EXCLUDED]
@@ -574,9 +578,28 @@ components:
           type: array
           items:
             type: string
+        evidenceSpans:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvidenceSpan"
         status:
           type: string
           enum: [INCLUDED, EXCLUDED]
+    EvidenceSpan:
+      type: object
+      required: [sourceFileId, text, startChar, endChar]
+      properties:
+        sourceFileId:
+          type: string
+        text:
+          type: string
+          minLength: 1
+        startChar:
+          type: integer
+          minimum: 0
+        endChar:
+          type: integer
+          minimum: 0
     AnalyticStandard:
       type: object
       required: [id, name, shortName, score, status, finding, prompt]

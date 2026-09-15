@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { EvidenceSpan } from './evidenceSpan';
 import type { IncidentReviewInputStatus } from './incidentReviewInputStatus';
 
 export interface IncidentReviewInput {
@@ -18,5 +19,6 @@ export interface IncidentReviewInput {
   parties: string[];
   description: string;
   sourceFileIds: string[];
+  evidenceSpans?: EvidenceSpan[];
   status: IncidentReviewInputStatus;
 }

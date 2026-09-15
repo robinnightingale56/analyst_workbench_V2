@@ -7,14 +7,22 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 from uuid import uuid4
+import spacy
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+from spacy.matcher import PhraseMatcher
 from .models import Incident, SourceFile
+
+NLP = spacy.blank("en")
+NLP.add_pipe("sentencizer")
 
 EVENT_TERMS = r"clash(?:ed|es|ing)?|fight(?:s|ing)?|fought|exchange(?:s|d|ing)? fire|skirmish(?:ed|es|ing)?"
 EVENT_RE = re.compile(rf"\b(?:{EVENT_TERMS})\b", re.I)
-UNSUPPORTED_RE = re.compile(
-    r"\b(?:no|not|never|den(?:y|ied|ies)|may|might|could|would|will|possible|possibly|potential|expected|forecast|planned|plans|report denied|without|whether|if)\b|n't\b",
-    re.I,
-)
+UNSUPPORTED_BEFORE_EVENT = {
+    "could", "expected", "forecast",
+    "may", "might", "never", "no", "not", "planned", "plans", "possible",
+    "possibly", "potential", "whether", "will", "without", "would",
+}
 
 EVALUATION_VECTORS = [
     {"id": "vector-a", "name": "Consumer Indicies", "description": "Stand-in vector measuring changes across selected consumer indicators.", "weight": 0.17, "placeholder": True},
@@ -69,11 +77,83 @@ def _date(text: str) -> str | None:
 
 
 def _location(text: str) -> str:
+    doc = NLP.make_doc(text)
+    stop_words = {"on", "after", "before", "where", "when", "border"}
+    for index, token in enumerate(doc):
+        if token.lower_ not in {"in", "near", "at", "along"}:
+            continue
+        start = index + 1
+        if start < len(doc) and doc[start].lower_ == "the":
+            start += 1
+        end = start
+        while end < len(doc):
+            candidate = doc[end]
+            if candidate.is_punct or candidate.lower_ in stop_words:
+                break
+            if end > start and candidate.is_space:
+                break
+            end += 1
+        location = doc[start:end].text.strip()
+        if location and any(token.is_title or token.is_upper for token in doc[start:end]):
+            return location
+
     match = re.search(
         r"\b(?:in|near|at|along)\s+(?:the\s+)?([A-Z][A-Za-z0-9' -]{2,60}?)(?=[,.;]|\s+(?:on|after|before|where|when|border)\b)",
         text,
     )
     return match.group(1).strip() if match else "Location not established"
+
+
+def _nlp_links_parties(sentence: str, parties: list[str]) -> bool:
+    if len(parties) != 2 or any(not party.strip() for party in parties):
+        return False
+    doc = NLP(sentence)
+    matcher = PhraseMatcher(NLP.vocab, attr="LOWER")
+    matcher.add(
+        "REQUESTED_PARTIES",
+        [NLP.make_doc(party.strip()) for party in parties],
+    )
+    matched_text = {doc[start:end].text.lower() for _, start, end in matcher(doc)}
+    return all(party.strip().lower() in matched_text for party in parties)
+
+
+def _event_is_asserted(sentence: str) -> bool:
+    doc = NLP(sentence)
+    for match in EVENT_RE.finditer(sentence):
+        event_span = doc.char_span(
+            match.start(),
+            match.end(),
+            alignment_mode="expand",
+        )
+        if event_span is None:
+            continue
+        prefix = sentence[:match.start()]
+        if re.search(r"^\s*(?:if|had)\b", prefix, re.I):
+            continue
+        if re.search(
+            r"\bno\s+(?:credible\s+)?(?:evidence|reports?|reporting|confirmation|indication|record)\b",
+            prefix,
+            re.I,
+        ):
+            continue
+        assertion_clause = re.split(
+            r"(?:,\s*but\b|;\s*(?:but|however)\b)",
+            prefix,
+            flags=re.I,
+        )[-1]
+        if re.search(r"\b(?:denied|denies|deny)\b", assertion_clause, re.I):
+            continue
+        preceding = [
+            token.lower_
+            for token in doc[:event_span.start]
+            if not token.is_punct
+        ]
+        if any(marker in UNSUPPORTED_BEFORE_EVENT for marker in preceding[-6:]):
+            continue
+        if event_span.start > 0 and doc[event_span.start - 1].lower_ in {"not", "never"}:
+            continue
+        return True
+    return False
 
 
 def _links_parties(sentence: str, parties: list[str]) -> bool:
@@ -87,7 +167,9 @@ def _links_parties(sentence: str, parties: list[str]) -> bool:
             rf"\b{a}\b(?:\s+\w+){{0,4}}\s+(?:{EVENT_TERMS})\s+(?:with|against|versus|vs\.?)\s+\b{b}\b",
             rf"(?:{EVENT_TERMS})(?:\s+\w+){{0,5}}\s+between\s+\b{a}\b\s+and\s+\b{b}\b",
         )
-        if any(re.search(pattern, sentence, re.I) for pattern in patterns):
+        if _nlp_links_parties(sentence, parties) and any(
+            re.search(pattern, sentence, re.I) for pattern in patterns
+        ):
             return True
     return False
 
@@ -97,16 +179,28 @@ def source_supports_incident(source: SourceFile | dict, incident: Incident | dic
     incident = incident if isinstance(incident, Incident) else Incident.model_validate(incident)
     if source.contentDepth == "METADATA":
         return False
-    for sentence in re.split(r"(?<=[.!?])\s+", source.content):
+    evidence_spans = [
+        span for span in incident.evidenceSpans if span.sourceFileId == source.id
+    ]
+    candidate_texts: list[str] = []
+    if evidence_spans:
+        for span in evidence_spans:
+            if (
+                span.endChar <= len(source.content)
+                and span.startChar < span.endChar
+                and source.content[span.startChar:span.endChar] == span.text
+            ):
+                candidate_texts.append(span.text)
+    elif incident.description in source.content:
+        candidate_texts.append(incident.description)
+
+    for sentence in candidate_texts:
         date = _date(sentence)
         supports_location = incident.location == "Location not established" or incident.location.lower() in sentence.lower()
-        desc_terms = _terms(incident.description, incident.parties)
-        sent_terms = _terms(sentence, incident.parties)
-        overlap = len(desc_terms & sent_terms)
         if (
             date and date[:10] == incident.date[:10] and EVENT_RE.search(sentence)
-            and not UNSUPPORTED_RE.search(sentence) and _links_parties(sentence, incident.parties)
-            and supports_location and desc_terms and overlap / len(desc_terms) >= 0.5
+            and _event_is_asserted(sentence) and _links_parties(sentence, incident.parties)
+            and supports_location
         ):
             return True
     return False
@@ -144,7 +238,18 @@ def _same(left: Incident, right: Incident) -> bool:
         return False
     overlap = len(_terms(left.description, left.parties) & _terms(right.description, right.parties))
     denom = max(1, min(len(_terms(left.description, left.parties)), len(_terms(right.description, right.parties))))
-    return overlap / denom >= (0.25 if known_l and known_r else 0.6)
+    token_similarity = overlap / denom
+    try:
+        vectors = TfidfVectorizer(
+            lowercase=True,
+            stop_words="english",
+            ngram_range=(1, 2),
+        ).fit_transform([left.description, right.description])
+        semantic_similarity = float(cosine_similarity(vectors[0], vectors[1])[0, 0])
+    except ValueError:
+        semantic_similarity = 0.0
+    threshold = 0.3 if known_l and known_r else 0.55
+    return max(token_similarity, semantic_similarity) >= threshold
 
 
 def deduplicate_incidents(items: list[Incident | dict]) -> list[dict]:
@@ -156,6 +261,15 @@ def deduplicate_incidents(items: list[Incident | dict]) -> list[dict]:
             result.append(candidate.model_copy(deep=True))
         else:
             duplicate.sourceFileIds = list(dict.fromkeys(duplicate.sourceFileIds + candidate.sourceFileIds))
+            known_spans = {
+                (span.sourceFileId, span.startChar, span.endChar)
+                for span in duplicate.evidenceSpans
+            }
+            duplicate.evidenceSpans.extend(
+                span
+                for span in candidate.evidenceSpans
+                if (span.sourceFileId, span.startChar, span.endChar) not in known_spans
+            )
             if len(candidate.description) > len(duplicate.description):
                 duplicate.description = candidate.description
             if candidate.status == "INCLUDED":
@@ -189,13 +303,31 @@ def build_count_answer(question: str, selected: list[SourceFile | dict]) -> dict
     for source in sources:
         if source.contentDepth == "METADATA":
             continue
-        for sentence in filter(None, re.split(r"(?<=[.!?])\s+", source.content)):
+        for sentence_span in NLP(source.content).sents:
+            raw_sentence = sentence_span.text
+            sentence = raw_sentence.strip()
+            leading_whitespace = len(raw_sentence) - len(raw_sentence.lstrip())
+            trailing_whitespace = len(raw_sentence) - len(raw_sentence.rstrip())
             date = _date(sentence)
-            if not (EVENT_RE.search(sentence) and not UNSUPPORTED_RE.search(sentence) and _links_parties(sentence, parties) and date):
+            if not (EVENT_RE.search(sentence) and _event_is_asserted(sentence) and _links_parties(sentence, parties) and date):
                 continue
             if date_range and not date_range["startDate"] <= date[:10] <= date_range["endDate"]:
                 continue
-            candidates.append(Incident(id=str(uuid4()), date=date, location=_location(sentence), parties=parties, description=sentence, sourceFileIds=[source.id], status="INCLUDED"))
+            candidates.append(Incident(
+                id=str(uuid4()),
+                date=date,
+                location=_location(sentence),
+                parties=parties,
+                description=sentence,
+                sourceFileIds=[source.id],
+                evidenceSpans=[{
+                    "sourceFileId": source.id,
+                    "text": sentence,
+                    "startChar": sentence_span.start_char + leading_whitespace,
+                    "endChar": sentence_span.end_char - trailing_whitespace,
+                }],
+                status="INCLUDED",
+            ))
     incidents = deduplicate_incidents(candidates)
     corroborated = sum(len(i["sourceFileIds"]) > 1 for i in incidents)
     confidence = "LOW" if not incidents else ("MODERATE" if corroborated or any(s.reliability == "HIGH" for s in sources) else "LOW")

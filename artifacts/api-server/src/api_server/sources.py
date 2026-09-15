@@ -1,11 +1,26 @@
 from __future__ import annotations
+import asyncio
 import html
+import ipaddress
 import re
+import socket
 from datetime import datetime, timezone
+from urllib.parse import urljoin, urlparse
 from uuid import uuid4
 import httpx
+import trafilatura
 from bs4 import BeautifulSoup
 from .models import SourceFile
+
+MAX_DOCUMENT_BYTES = 2_000_000
+MAX_DOCUMENT_CHARS = 500_000
+DOCUMENT_TIMEOUT_SECONDS = 10
+MAX_DOCUMENT_REDIRECTS = 3
+READABLE_CONTENT_TYPES = {
+    "text/html",
+    "application/xhtml+xml",
+    "text/plain",
+}
 
 SOURCE_CONNECTORS = [
     {"id": "google-news-rss", "name": "Google News", "description": "Live news and article discovery through the public Google News RSS feed.", "status": "READY", "mode": "LIVE", "sourceTypes": ["NEWS", "WEB"]},
@@ -43,6 +58,175 @@ def _published(raw: str | None, fallback: str) -> str:
 def _rss_items(xml: str) -> list[BeautifulSoup]:
     soup = BeautifulSoup(xml, "xml")
     return soup.find_all("item")
+
+
+async def _resolve_public_http_url(
+    url: str,
+) -> tuple[object, list[ipaddress.IPv4Address | ipaddress.IPv6Address]]:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("document URL must use public HTTP or HTTPS")
+    if parsed.username or parsed.password:
+        raise ValueError("document URL must not contain credentials")
+
+    try:
+        addresses = [ipaddress.ip_address(parsed.hostname)]
+    except ValueError:
+        loop = asyncio.get_running_loop()
+        try:
+            resolved = await loop.getaddrinfo(
+                parsed.hostname,
+                parsed.port or (443 if parsed.scheme == "https" else 80),
+                type=socket.SOCK_STREAM,
+            )
+        except socket.gaierror as exc:
+            raise ValueError("document host could not be resolved") from exc
+        addresses = list({
+            ipaddress.ip_address(item[4][0])
+            for item in resolved
+        })
+
+    if not addresses or any(not address.is_global for address in addresses):
+        raise ValueError("document URL resolved to a non-public address")
+    return parsed, sorted(addresses, key=lambda address: (address.version != 4, str(address)))
+
+
+async def extract_readable_document(
+    client: httpx.AsyncClient | None,
+    url: str,
+) -> str:
+    """Fetch and extract bounded readable text from a public web document."""
+    current_url = url
+    async with asyncio.timeout(DOCUMENT_TIMEOUT_SECONDS):
+        for redirect_count in range(MAX_DOCUMENT_REDIRECTS + 1):
+            parsed, addresses = await _resolve_public_http_url(current_url)
+            host_header = parsed.hostname or ""
+            if parsed.port:
+                host_header += f":{parsed.port}"
+
+            async def read_hop(
+                hop_client: httpx.AsyncClient,
+                pinned_url: str,
+            ) -> tuple[str | None, str | None]:
+                async with hop_client.stream(
+                    "GET",
+                    pinned_url,
+                    follow_redirects=False,
+                    timeout=DOCUMENT_TIMEOUT_SECONDS,
+                    headers={
+                        "Host": host_header,
+                        "User-Agent": "AnalystWorkbenchProofOfConcept/0.1",
+                        "Accept": "text/html,application/xhtml+xml,text/plain",
+                    },
+                    extensions={"sni_hostname": parsed.hostname},
+                ) as response:
+                    if response.is_redirect:
+                        location = response.headers.get("location")
+                        if not location:
+                            raise ValueError("document redirect did not provide a location")
+                        return location, None
+
+                    response.raise_for_status()
+                    content_type = response.headers.get("content-type", "").split(";", 1)[0].lower()
+                    if content_type not in READABLE_CONTENT_TYPES:
+                        raise ValueError("document content type is not readable text")
+                    content_length = response.headers.get("content-length")
+                    if content_length and int(content_length) > MAX_DOCUMENT_BYTES:
+                        raise ValueError("document exceeded the 2 MB limit")
+
+                    chunks: list[bytes] = []
+                    byte_count = 0
+                    async for chunk in response.aiter_bytes():
+                        byte_count += len(chunk)
+                        if byte_count > MAX_DOCUMENT_BYTES:
+                            raise ValueError("document exceeded the 2 MB limit")
+                        chunks.append(chunk)
+
+                    raw = b"".join(chunks).decode(response.encoding or "utf-8", errors="replace")
+                    return None, raw
+
+            last_transport_error: httpx.TransportError | None = None
+            for address in addresses:
+                address_text = f"[{address}]" if address.version == 6 else str(address)
+                port_suffix = f":{parsed.port}" if parsed.port else ""
+                pinned_url = parsed._replace(
+                    netloc=f"{address_text}{port_suffix}",
+                ).geturl()
+                try:
+                    if client is None:
+                        # A fresh pool per address prevents redirects or DNS
+                        # aliases from reusing another logical host's TLS session.
+                        async with httpx.AsyncClient() as hop_client:
+                            location, raw = await read_hop(hop_client, pinned_url)
+                    else:
+                        # Tests may supply a MockTransport-backed client.
+                        location, raw = await read_hop(client, pinned_url)
+                    break
+                except httpx.TransportError as exc:
+                    last_transport_error = exc
+            else:
+                if last_transport_error is not None:
+                    raise last_transport_error
+                raise ValueError("document host did not provide a reachable address")
+
+            if location is not None:
+                if redirect_count == MAX_DOCUMENT_REDIRECTS:
+                    raise ValueError("document exceeded the redirect limit")
+                current_url = urljoin(current_url, location)
+                continue
+            if raw is None:
+                raise ValueError("document response was empty")
+
+            extracted = trafilatura.extract(
+                raw,
+                include_comments=False,
+                include_tables=False,
+                favor_precision=True,
+                output_format="txt",
+            )
+            if not extracted:
+                extracted = BeautifulSoup(raw, "lxml").get_text(" ", strip=True)
+            readable = re.sub(r"\s+", " ", extracted or "").strip()
+            if len(readable) < 120:
+                raise ValueError("document did not contain enough readable text")
+            return readable[:MAX_DOCUMENT_CHARS]
+
+    raise ValueError("document could not be retrieved")
+
+
+async def _hydrate_full_documents(
+    client: httpx.AsyncClient | None,
+    files: list[dict],
+) -> list[str]:
+    semaphore = asyncio.Semaphore(4)
+
+    async def hydrate(source: dict) -> str | None:
+        if urlparse(source["url"]).scheme not in {"http", "https"}:
+            return None
+        try:
+            async with semaphore:
+                text = await extract_readable_document(client, source["url"])
+            source["content"] = text
+            source["contentDepth"] = "FULL_TEXT"
+            source["collectionMethod"] += " + bounded full-document extraction"
+            source["keyPoints"] = [
+                *source["keyPoints"],
+                "Readable full text was extracted for content-grounded analysis.",
+            ]
+            return None
+        except (TimeoutError, httpx.HTTPError, ValueError) as exc:
+            source["keyPoints"] = [
+                *source["keyPoints"],
+                "Full text was unavailable; this record retains only provider-supplied content.",
+            ]
+            return f"{source['title']}: {exc}"
+
+    failures = await asyncio.gather(*(hydrate(source) for source in files))
+    return [
+        f"Full-document extraction was unavailable for {failure}."
+        for failure in failures
+        if failure is not None
+    ]
 
 
 def parse_bing_news_rss(xml: str, prompt: str, limit: int, retrieved_at: str | None = None) -> list[dict]:
@@ -134,4 +318,6 @@ async def research(prompt: str, connector_ids: list[str], max_results: int = 12)
         files.extend(demonstration_files(prompt, max_results))
         notices.append("Demonstration Library results are synthetic and are labeled in each record.")
     files.sort(key=lambda x: x["relevance"], reverse=True)
-    return files[: min(max_results, 20)], notices
+    files = files[: min(max_results, 20)]
+    notices.extend(await _hydrate_full_documents(None, files))
+    return files, notices

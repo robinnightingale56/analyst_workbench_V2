@@ -24,6 +24,7 @@ export * from './errorResponse';
 export * from './evaluationVectorDefinition';
 export * from './evaluationVectorResult';
 export * from './evaluationVectorResultStatus';
+export * from './evidenceSpan';
 export * from './healthStatus';
 export * from './healthStatusArchivePolicy';
 export * from './historicalRating';

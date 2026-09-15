@@ -59,7 +59,8 @@ _Populate as you build — explicit user instructions worth remembering across s
 - Current retrieval output is demonstration data until an approved live source connector is configured.
 - Live proof-of-concept sources are public and may be unavailable, rate-limited, incomplete, biased, or unsuitable for final judgments.
 - Vector scores and trend recommendations are provisional metadata heuristics until full report content is evaluated against an approved rubric.
-- NLP and document-analysis packages are installed, but the current incident pipeline still uses deterministic sentence and citation rules; advanced NLP models are a subsequent product capability.
+- Live HTTP/HTTPS reports use bounded, SSRF-protected Trafilatura/Beautiful Soup extraction. spaCy token/span rules and TF-IDF similarity support candidate incidents while deterministic date, assertion, and exact-citation checks remain authoritative.
+- The spaCy pipeline uses deterministic English token and phrase rules rather than a separately downloaded statistical language model; a trained model requires its own evaluated release.
 - Never log prompt text, source content, credentials, or classification-sensitive metadata in production.
 
 ## Pointers

@@ -323,6 +323,7 @@ export function CountAnswerReview({ session, onUpdated }: { session: AnalysisSes
   const [incidents, setIncidents] = useState<Incident[]>(answer.incidents);
   const [showAdd, setShowAdd] = useState(false);
   const [draft, setDraft] = useState({ date: '', location: '', description: '', sourceFileId: '' });
+  const [draftEvidenceError, setDraftEvidenceError] = useState('');
   const [saveError, setSaveError] = useState<'conflict' | 'generic' | ''>('');
   const [reloadError, setReloadError] = useState(false);
   const [confirmReload, setConfirmReload] = useState(false);
@@ -335,7 +336,18 @@ export function CountAnswerReview({ session, onUpdated }: { session: AnalysisSes
     setConfirmReload(false);
   }, [answer.incidents]);
   const includedCount = incidents.filter((incident) => incident.status === 'INCLUDED').length;
-  const hasUncitedIncludedIncident = incidents.some((incident) => incident.status === 'INCLUDED' && incident.sourceFileIds.length === 0);
+  const hasIncompleteIncludedEvidence = incidents.some((incident) => {
+    if (incident.status !== 'INCLUDED' || incident.sourceFileIds.length === 0) return incident.status === 'INCLUDED';
+    return incident.sourceFileIds.some((sourceId) => {
+      const source = session.sourceFiles.find((item) => item.id === sourceId);
+      return !source || !(incident.evidenceSpans ?? []).some((span) =>
+        span.sourceFileId === sourceId
+        && span.startChar >= 0
+        && span.endChar <= source.content.length
+        && source.content.slice(span.startChar, span.endChar) === span.text
+      );
+    });
+  });
   const hasSupportedAnswer = includedCount > 0;
   const save = (finalized: boolean) => {
     setSaveError('');
@@ -361,6 +373,7 @@ export function CountAnswerReview({ session, onUpdated }: { session: AnalysisSes
       onUpdated(currentSession);
       setIncidents(currentSession.assessment?.countAnswer?.incidents ?? []);
       setDraft({ date: '', location: '', description: '', sourceFileId: '' });
+      setDraftEvidenceError('');
       setShowAdd(false);
       setSaveError('');
       setReloadError(false);
@@ -374,16 +387,30 @@ export function CountAnswerReview({ session, onUpdated }: { session: AnalysisSes
   };
   const addIncident = () => {
     if (!draft.date || !draft.location || !draft.description || !draft.sourceFileId) return;
+    const supportingSource = session.sourceFiles.find((source) => source.id === draft.sourceFileId);
+    const evidenceText = draft.description.trim();
+    const startChar = supportingSource?.content.indexOf(evidenceText) ?? -1;
+    if (!supportingSource || startChar < 0) {
+      setDraftEvidenceError('Paste an exact supporting sentence from the selected source.');
+      return;
+    }
     setIncidents((current) => [...current, {
       id: crypto.randomUUID(),
       date: new Date(`${draft.date}T12:00:00Z`).toISOString(),
       location: draft.location,
       parties: answer.requestedParties,
-      description: draft.description,
+      description: evidenceText,
       sourceFileIds: [draft.sourceFileId],
+      evidenceSpans: [{
+        sourceFileId: draft.sourceFileId,
+        text: evidenceText,
+        startChar,
+        endChar: startChar + evidenceText.length,
+      }],
       status: 'INCLUDED',
     }]);
     setDraft({ date: '', location: '', description: '', sourceFileId: '' });
+    setDraftEvidenceError('');
     setShowAdd(false);
   };
   return <div className="mt-6 border border-[hsl(174_44%_43%_/_0.35)] bg-card" data-testid="panel-count-answer">
@@ -411,12 +438,13 @@ export function CountAnswerReview({ session, onUpdated }: { session: AnalysisSes
       <input type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} className="border border-input bg-background px-3 py-2" aria-label="Incident date" />
       <input value={draft.location} onChange={(e) => setDraft({ ...draft, location: e.target.value })} placeholder="Location" className="border border-input bg-background px-3 py-2" />
       <div className="border border-input bg-background px-3 py-2 text-xs text-muted-foreground md:col-span-2">Parties: <span className="font-semibold text-foreground">{answer.requestedParties.join(' / ')}</span></div>
-      <select value={draft.sourceFileId} onChange={(e) => setDraft({ ...draft, sourceFileId: e.target.value })} className="border border-input bg-background px-3 py-2 md:col-span-2" aria-label="Supporting source">
+      <select value={draft.sourceFileId} onChange={(e) => { setDraft({ ...draft, sourceFileId: e.target.value }); setDraftEvidenceError(''); }} className="border border-input bg-background px-3 py-2 md:col-span-2" aria-label="Supporting source">
         <option value="">Select a supporting source</option>
         {session.sourceFiles.filter((source) => session.assessment!.selectedSourceFileIds.includes(source.id) && source.contentDepth !== 'METADATA').map((source) => <option key={source.id} value={source.id}>[{session.sourceFiles.indexOf(source) + 1}] {source.source}: {source.title}</option>)}
       </select>
-      <textarea value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="Paste the supporting incident sentence from the selected source" className="border border-input bg-background px-3 py-2 md:col-span-2" />
-      <div className="flex gap-2 md:col-span-2"><button onClick={addIncident} className="bg-primary px-3 py-2 font-semibold text-primary-foreground">Add incident</button><button onClick={() => setShowAdd(false)} className="border border-input px-3 py-2">Cancel</button></div>
+      <textarea value={draft.description} onChange={(e) => { setDraft({ ...draft, description: e.target.value }); setDraftEvidenceError(''); }} placeholder="Paste the supporting incident sentence from the selected source" className="border border-input bg-background px-3 py-2 md:col-span-2" />
+      {draftEvidenceError ? <div className="text-xs font-semibold text-[hsl(5_69%_40%)] md:col-span-2" role="alert" data-testid="error-incident-evidence">{draftEvidenceError}</div> : null}
+      <div className="flex gap-2 md:col-span-2"><button onClick={addIncident} className="bg-primary px-3 py-2 font-semibold text-primary-foreground" data-testid="button-submit-incident">Add incident</button><button onClick={() => setShowAdd(false)} className="border border-input px-3 py-2">Cancel</button></div>
     </div> : null}
     {saveError === 'conflict' ? <div className="border-t border-[hsl(39_92%_65%_/_0.55)] bg-[hsl(39_92%_65%_/_0.12)] p-4" role="alert" data-testid="notice-review-conflict">
       <div className="flex items-start gap-3">
@@ -435,7 +463,7 @@ export function CountAnswerReview({ session, onUpdated }: { session: AnalysisSes
       </div>
     </div> : null}
     {saveError === 'generic' ? <div className="flex items-center gap-2 border-t border-[hsl(5_69%_48%_/_0.22)] bg-[hsl(5_69%_48%_/_0.05)] px-4 py-3 text-xs text-[hsl(5_69%_40%)]" role="alert" data-testid="error-save-review"><CircleAlert size={14} />The review could not be saved. Your local changes are still here; try again.</div> : null}
-    <div className="flex flex-wrap justify-between gap-3 border-t border-border p-4"><button onClick={() => setShowAdd(true)} className="inline-flex items-center gap-2 border border-input px-3 py-2 font-semibold"><Plus size={14} />Add incident</button><div className="flex items-center gap-2">{hasUncitedIncludedIncident ? <span className="text-xs text-[hsl(5_69%_40%)]">Add citations before finalizing.</span> : null}<button onClick={() => save(false)} disabled={updateReview.isPending} className="border border-input px-3 py-2 font-semibold">Save review</button><button onClick={() => save(true)} disabled={updateReview.isPending || hasUncitedIncludedIncident || !hasSupportedAnswer} className="bg-[hsl(174_44%_32%)] px-3 py-2 font-semibold text-white disabled:opacity-45">{answer.finalized ? 'Finalized' : 'Finalize count'}</button></div></div>
+    <div className="flex flex-wrap justify-between gap-3 border-t border-border p-4"><button onClick={() => { setShowAdd(true); setDraftEvidenceError(''); }} className="inline-flex items-center gap-2 border border-input px-3 py-2 font-semibold"><Plus size={14} />Add incident</button><div className="flex items-center gap-2">{hasIncompleteIncludedEvidence ? <span className="text-xs text-[hsl(5_69%_40%)]">Every included incident needs exact supporting text from each cited source before finalizing.</span> : null}<button onClick={() => save(false)} disabled={updateReview.isPending} className="border border-input px-3 py-2 font-semibold">Save review</button><button onClick={() => save(true)} disabled={updateReview.isPending || hasIncompleteIncludedEvidence || !hasSupportedAnswer} className="bg-[hsl(174_44%_32%)] px-3 py-2 font-semibold text-white disabled:opacity-45">{answer.finalized ? 'Finalized' : 'Finalize count'}</button></div></div>
   </div>;
 }
 
