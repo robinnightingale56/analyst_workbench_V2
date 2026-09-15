@@ -102,7 +102,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "env -u PORT -u BASE_PATH pnpm --filter @workspace/mockup-sandbox run validate:bundle"
+args = "pnpm --filter @workspace/mockup-sandbox run validate:bundle:production"
 
 [workflows.workflow.metadata]
 isValidation = true
@@ -113,7 +113,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=5173 BASE_PATH=/__mockup/ pnpm --filter @workspace/mockup-sandbox run validate:bundle"
+args = "pnpm --filter @workspace/mockup-sandbox run validate:bundle:preview"
 
 [workflows.workflow.metadata]
 isValidation = true

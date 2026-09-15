@@ -54,7 +54,10 @@ export async function createViteConfig(
     },
     root: path.resolve(import.meta.dirname),
     build: {
-      outDir: path.resolve(import.meta.dirname, "dist"),
+      outDir: path.resolve(
+        import.meta.dirname,
+        env.CANVAS_BUILD_OUTPUT_DIR ?? "dist",
+      ),
       emptyOutDir: true,
     },
     server: {
