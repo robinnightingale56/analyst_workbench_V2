@@ -1,18 +1,28 @@
-import { integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { check, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-export const analysisSessionsTable = pgTable("analysis_sessions", {
-  id: text("id").primaryKey(),
-  data: jsonb("data").notNull(),
-  provenance: text("provenance").notNull().default("USER"),
-  runId: text("run_id"),
-  version: integer("version").notNull().default(1),
-  archivedAt: timestamp("archived_at", { withTimezone: true }),
-  finalizedAt: timestamp("finalized_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const analysisSessionsTable = pgTable(
+  "analysis_sessions",
+  {
+    id: text("id").primaryKey(),
+    data: jsonb("data").notNull(),
+    provenance: text("provenance").notNull().default("USER"),
+    runId: text("run_id"),
+    version: integer("version").notNull().default(1),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    finalizedAt: timestamp("finalized_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      "analysis_sessions_ownership_check",
+      sql`(${table.provenance} = 'CONTRACT_TEST' AND ${table.runId} IS NOT NULL) OR (${table.provenance} = 'USER' AND ${table.runId} IS NULL)`,
+    ),
+  ],
+);
 
 export const insertAnalysisSessionSchema = createInsertSchema(
   analysisSessionsTable,

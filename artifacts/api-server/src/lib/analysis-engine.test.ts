@@ -809,6 +809,70 @@ test("test cleanup deletes only the session with the exact fixture ID", async ()
   assert.notEqual(await getSession(neighboringSession.id), undefined);
 });
 
+test("database rejects inconsistent session ownership metadata", async () => {
+  const data = {
+    id: "invalid-ownership",
+    prompt: "Invalid ownership metadata",
+    analyst: "Test Analyst",
+    classification: "UNCLASSIFIED",
+    status: "DRAFT",
+    createdAt: new Date().toISOString(),
+    sourceFiles: [],
+    sourceNotices: [],
+    assessment: null,
+  };
+  const isOwnershipConstraintError = (error: unknown) =>
+    error instanceof Error &&
+    error.cause instanceof Error &&
+    /analysis_sessions_ownership_check/.test(error.cause.message);
+
+  await assert.rejects(
+    db.insert(analysisSessionsTable).values({
+      id: crypto.randomUUID(),
+      data,
+      provenance: CONTRACT_TEST_PROVENANCE,
+    }),
+    isOwnershipConstraintError,
+  );
+  await assert.rejects(
+    db.insert(analysisSessionsTable).values({
+      id: crypto.randomUUID(),
+      data,
+      provenance: "USER",
+      runId: testRunId,
+    }),
+    isOwnershipConstraintError,
+  );
+});
+
+test("database accepts valid analyst and contract ownership metadata", async () => {
+  const analystId = crypto.randomUUID();
+  const contractId = crypto.randomUUID();
+  const data = {
+    id: "valid-ownership",
+    prompt: "Valid ownership metadata",
+    analyst: "Test Analyst",
+    classification: "UNCLASSIFIED",
+    status: "DRAFT",
+    createdAt: new Date().toISOString(),
+    sourceFiles: [],
+    sourceNotices: [],
+    assessment: null,
+  };
+
+  await db.insert(analysisSessionsTable).values([
+    { id: analystId, data, provenance: "USER" },
+    {
+      id: contractId,
+      data,
+      provenance: CONTRACT_TEST_PROVENANCE,
+      runId: testRunId,
+    },
+  ]);
+  testSessionIds.add(analystId);
+  testSessionIds.add(contractId);
+});
+
 test("stale fixture sweep preserves active runs and analyst-created sessions", async () => {
   const staleFixture = await createSession({
     prompt: "Remove this stale contract fixture",
