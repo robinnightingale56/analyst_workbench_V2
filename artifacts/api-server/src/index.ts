@@ -1,9 +1,11 @@
 import app from "./app";
 import { purgeExpiredArchivedSessions } from "./lib/analysis-store";
+import { getArchivedSessionSettings } from "./lib/archived-session-settings";
 import { logger } from "./lib/logger";
 
 const rawPort = process.env["PORT"];
-const archivedSessionCleanupIntervalMs = 6 * 60 * 60 * 1000;
+const { cleanupIntervalMs: archivedSessionCleanupIntervalMs } =
+  getArchivedSessionSettings();
 
 if (!rawPort) {
   throw new Error(

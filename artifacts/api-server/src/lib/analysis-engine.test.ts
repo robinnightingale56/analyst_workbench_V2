@@ -12,6 +12,7 @@ import {
   purgeExpiredArchivedSessions,
   setSessionSources,
 } from "./analysis-store";
+import { getArchivedSessionSettings } from "./archived-session-settings";
 import { parseBingNewsRss } from "./source-adapters";
 
 function source(id: string, content: string, publishedAt = "2026-09-14T12:00:00Z") {
@@ -715,6 +716,63 @@ test("retention removes only expired archived non-finalized sessions", async () 
   assert.equal(deletedCount, 1);
   assert.equal(await getSession(expiredDraft.id), undefined);
   assert.notEqual(await getSession(expiredFinalized.id), undefined);
+});
+
+test("archived session settings use documented defaults", () => {
+  assert.deepEqual(getArchivedSessionSettings({}), {
+    retentionDays: 30,
+    cleanupIntervalMs: 6 * 60 * 60 * 1000,
+  });
+});
+
+test("configured retention controls the archive cutoff", async () => {
+  const retained = await createTestSession({
+    prompt: "Retain this archive inside the configured window",
+  });
+  const expired = await createTestSession({
+    prompt: "Expire this archive outside the configured window",
+  });
+  const now = new Date("2026-09-15T12:00:00.000Z");
+  await db
+    .update(analysisSessionsTable)
+    .set({ archivedAt: new Date("2026-09-13T12:00:00.000Z") })
+    .where(eq(analysisSessionsTable.id, retained.id));
+  await db
+    .update(analysisSessionsTable)
+    .set({ archivedAt: new Date("2026-09-11T12:00:00.000Z") })
+    .where(eq(analysisSessionsTable.id, expired.id));
+
+  const previousRetention = process.env["ARCHIVED_SESSION_RETENTION_DAYS"];
+  process.env["ARCHIVED_SESSION_RETENTION_DAYS"] = "3";
+  try {
+    assert.equal(await purgeExpiredArchivedSessions(now), 1);
+  } finally {
+    if (previousRetention === undefined) {
+      delete process.env["ARCHIVED_SESSION_RETENTION_DAYS"];
+    } else {
+      process.env["ARCHIVED_SESSION_RETENTION_DAYS"] = previousRetention;
+    }
+  }
+
+  assert.notEqual(await getSession(retained.id), undefined);
+  assert.equal(await getSession(expired.id), undefined);
+});
+
+test("invalid archived session settings fail clearly", () => {
+  assert.throws(
+    () =>
+      getArchivedSessionSettings({
+        ARCHIVED_SESSION_RETENTION_DAYS: "never",
+      }),
+    /Invalid ARCHIVED_SESSION_RETENTION_DAYS.*positive number/,
+  );
+  assert.throws(
+    () =>
+      getArchivedSessionSettings({
+        ARCHIVED_SESSION_CLEANUP_INTERVAL_MINUTES: "999999",
+      }),
+    /Invalid ARCHIVED_SESSION_CLEANUP_INTERVAL_MINUTES.*at most/,
+  );
 });
 
 test("test cleanup deletes only the session with the exact fixture ID", async () => {

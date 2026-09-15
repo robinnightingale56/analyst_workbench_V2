@@ -1,6 +1,7 @@
 import { analysisSessionsTable, db } from "@workspace/db";
 import { and, desc, eq, isNotNull, isNull, lt } from "drizzle-orm";
 import { assessSources } from "./analysis-engine";
+import { getArchivedSessionSettings } from "./archived-session-settings";
 import { logger } from "./logger";
 import {
   generateDemonstrationFiles,
@@ -44,7 +45,6 @@ export class FinalizedAnalysisArchiveError extends Error {
 }
 
 const seededId = "demo-session";
-const archivedSessionRetentionDays = 30;
 
 function rowToSession(row: typeof analysisSessionsTable.$inferSelect): AnalysisSession {
   const data = row.data as Omit<AnalysisSession, "version" | "updatedAt">;
@@ -112,8 +112,9 @@ async function writeSession(
 }
 
 export async function purgeExpiredArchivedSessions(now = new Date()) {
+  const { retentionDays } = getArchivedSessionSettings();
   const cutoff = new Date(
-    now.getTime() - archivedSessionRetentionDays * 24 * 60 * 60 * 1000,
+    now.getTime() - retentionDays * 24 * 60 * 60 * 1000,
   );
   const deleted = await db
     .delete(analysisSessionsTable)
