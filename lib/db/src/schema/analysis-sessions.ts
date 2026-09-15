@@ -1,5 +1,13 @@
 import { sql } from "drizzle-orm";
-import { check, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import {
+  check,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+} from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -17,6 +25,11 @@ export const analysisSessionsTable = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    index("analysis_sessions_stale_contract_fixture_idx")
+      .on(table.createdAt, table.runId)
+      .where(
+        sql`${table.provenance} = 'CONTRACT_TEST' AND ${table.runId} IS NOT NULL`,
+      ),
     check(
       "analysis_sessions_ownership_check",
       sql`(${table.provenance} = 'CONTRACT_TEST' AND ${table.runId} IS NOT NULL) OR (${table.provenance} = 'USER' AND ${table.runId} IS NULL)`,
