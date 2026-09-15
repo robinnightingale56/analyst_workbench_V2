@@ -17,6 +17,8 @@ const validationDeclarationPath = path.join(
   workspaceRoot,
   "lib/api-zod/dist/generated/api.d.ts",
 );
+const intentionalFailureMessage =
+  "Intentional canonical typecheck failure for cleanup verification";
 
 const runPnpm = (...args) => {
   const result = spawnSync("pnpm", args, {
@@ -97,6 +99,10 @@ try {
     utimes(validationDeclarationPath, future, future),
   ]);
 
+  if (process.env.STALE_API_DECLARATIONS_FORCE_TYPECHECK_FAILURE === "1") {
+    throw new Error(intentionalFailureMessage);
+  }
+
   runPnpm("run", "typecheck");
 
   const regeneratedApiDeclaration = await readFile(apiDeclarationPath, "utf8");
@@ -133,11 +139,18 @@ try {
   );
 } finally {
   // A failing regression must not leave the ignored local output corrupted.
-  await Promise.all([
-    writeFile(apiDeclarationPath, freshApiDeclaration),
-    writeFile(schemaDeclarationPath, freshSchemaDeclaration),
-    writeFile(validationDeclarationPath, freshValidationDeclaration),
-  ]);
+  try {
+    await Promise.all([
+      writeFile(apiDeclarationPath, freshApiDeclaration),
+      writeFile(schemaDeclarationPath, freshSchemaDeclaration),
+      writeFile(validationDeclarationPath, freshValidationDeclaration),
+    ]);
+  } catch (error) {
+    throw new Error(
+      `Failed to restore generated declarations after stale-declaration validation: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
 }
 
 console.log("Canonical typecheck regenerated stale API declarations.");
