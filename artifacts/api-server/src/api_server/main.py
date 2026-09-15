@@ -70,8 +70,8 @@ async def validation_error(_, exc: RequestValidationError):
 async def healthz():
     try:
         policy = get_settings().archive_policy()
-    except Exception as exc:
-        return _error(str(exc), 503)
+    except Exception:
+        return _error("Archive policy configuration is invalid", 503)
     return {"status": "ok", "archivePolicy": policy}
 
 
