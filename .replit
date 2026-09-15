@@ -32,6 +32,10 @@ args = "analyst-workbench-build"
 task = "workflow.run"
 args = "analyst-workbench-production-build"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "canvas-production-build"
+
 [[workflows.workflow]]
 name = "incident-count-contract"
 author = "agent"
@@ -72,6 +76,17 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "env -u PORT -u BASE_PATH pnpm --filter @workspace/analyst-workbench run build"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "canvas-production-build"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=5173 BASE_PATH=/__mockup/ pnpm --filter @workspace/mockup-sandbox run build"
 
 [workflows.workflow.metadata]
 isValidation = true
