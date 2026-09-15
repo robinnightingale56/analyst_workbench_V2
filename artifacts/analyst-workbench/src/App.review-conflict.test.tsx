@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { mutate, getAnalysisSession } = vi.hoisted(() => ({
   mutate: vi.fn(),
@@ -58,6 +58,8 @@ function makeSession(incidents = [originalServerIncident], version = 1) {
 }
 
 describe('CountAnswerReview conflict handling', () => {
+  afterEach(cleanup);
+
   beforeEach(() => {
     mutate.mockReset();
     getAnalysisSession.mockReset();
@@ -107,6 +109,37 @@ describe('CountAnswerReview conflict handling', () => {
     await waitFor(() => expect(screen.getByText('Current server review incident')).toBeTruthy());
 
     expect(screen.getByRole('button', { name: 'Remove incident from count' })).toBeTruthy();
+    expect(onUpdated).toHaveBeenCalledWith(currentServerSession);
+  });
+
+  it('keeps the local draft and allows another attempt when confirmed reload fails', async () => {
+    const onUpdated = vi.fn();
+    const currentServerSession = makeSession([serverIncident], 2);
+    getAnalysisSession
+      .mockRejectedValueOnce(new Error('Server unavailable'))
+      .mockResolvedValueOnce(currentServerSession);
+    mutate.mockImplementation((_variables, options) => {
+      options.onError({ status: 409 });
+    });
+
+    render(<CountAnswerReview session={makeSession()} onUpdated={onUpdated} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove incident from count' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save review' }));
+    fireEvent.click(screen.getByTestId('button-reload-review'));
+    fireEvent.click(screen.getByTestId('button-confirm-reload-review'));
+
+    await waitFor(() => expect(screen.getByTestId('error-reload-review')).toBeTruthy());
+    expect(screen.getByText('Original server review incident')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Approve incident' })).toBeTruthy();
+    expect(screen.getByTestId('button-reload-review')).toBeTruthy();
+    expect(onUpdated).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('button-reload-review'));
+    fireEvent.click(screen.getByTestId('button-confirm-reload-review'));
+
+    await waitFor(() => expect(getAnalysisSession).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByText('Current server review incident')).toBeTruthy());
     expect(onUpdated).toHaveBeenCalledWith(currentServerSession);
   });
 });

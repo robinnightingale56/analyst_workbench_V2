@@ -324,12 +324,14 @@ export function CountAnswerReview({ session, onUpdated }: { session: AnalysisSes
   const [showAdd, setShowAdd] = useState(false);
   const [draft, setDraft] = useState({ date: '', location: '', description: '', sourceFileId: '' });
   const [saveError, setSaveError] = useState<'conflict' | 'generic' | ''>('');
+  const [reloadError, setReloadError] = useState(false);
   const [confirmReload, setConfirmReload] = useState(false);
   const [isReloading, setIsReloading] = useState(false);
   const updateReview = useUpdateIncidentReview();
   useEffect(() => {
     setIncidents(answer.incidents);
     setSaveError('');
+    setReloadError(false);
     setConfirmReload(false);
   }, [answer.incidents]);
   const includedCount = incidents.filter((incident) => incident.status === 'INCLUDED').length;
@@ -337,6 +339,7 @@ export function CountAnswerReview({ session, onUpdated }: { session: AnalysisSes
   const hasSupportedAnswer = includedCount > 0;
   const save = (finalized: boolean) => {
     setSaveError('');
+    setReloadError(false);
     setConfirmReload(false);
     updateReview.mutate(
       { sessionId: session.id, data: { incidents, finalized, expectedVersion: session.version } },
@@ -352,6 +355,7 @@ export function CountAnswerReview({ session, onUpdated }: { session: AnalysisSes
   };
   const reloadCurrentReview = async () => {
     setIsReloading(true);
+    setReloadError(false);
     try {
       const currentSession = await getAnalysisSession(session.id, { cache: 'no-store' });
       onUpdated(currentSession);
@@ -359,9 +363,10 @@ export function CountAnswerReview({ session, onUpdated }: { session: AnalysisSes
       setDraft({ date: '', location: '', description: '', sourceFileId: '' });
       setShowAdd(false);
       setSaveError('');
+      setReloadError(false);
       setConfirmReload(false);
     } catch {
-      setSaveError('generic');
+      setReloadError(true);
       setConfirmReload(false);
     } finally {
       setIsReloading(false);
@@ -419,6 +424,7 @@ export function CountAnswerReview({ session, onUpdated }: { session: AnalysisSes
         <div className="flex-1">
           <div className="text-sm font-semibold text-foreground">This review was updated by someone else</div>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">Your save was not applied. Reload the newer review before continuing. Reloading will replace your unsaved local incident changes.</p>
+          {reloadError ? <p className="mt-2 text-xs font-semibold leading-5 text-[hsl(5_69%_40%)]" data-testid="error-reload-review">The newer review could not be loaded. Your local incident changes are still here; try reloading again or continue with this draft.</p> : null}
           <div className="mt-3 flex flex-wrap gap-2">
             {confirmReload ? <>
               <button onClick={reloadCurrentReview} disabled={isReloading} className="inline-flex items-center gap-2 bg-[hsl(30_69%_32%)] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50" data-testid="button-confirm-reload-review">{isReloading ? <Loader2 size={13} className="animate-spin" /> : null}Confirm reload and discard local changes</button>
