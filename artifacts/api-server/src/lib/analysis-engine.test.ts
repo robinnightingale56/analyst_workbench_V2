@@ -14,6 +14,7 @@ import {
   createSession,
   CONTRACT_TEST_PROVENANCE,
   deleteSession,
+  expiredArchivedSessionPredicate,
   getSession,
   purgeExpiredArchivedSessions,
   purgeStaleContractFixtures,
@@ -732,6 +733,47 @@ test("retention removes only expired archived non-finalized sessions", async () 
 
   assert.equal(await getSession(expiredDraft.id), undefined);
   assert.notEqual(await getSession(expiredFinalized.id), undefined);
+});
+
+test("expired archive deletion predicate uses its partial index with shared history present", async () => {
+  const expiredDraft = await createTestSession({
+    prompt: "Plan expired archive deletion",
+  });
+  const expiredFinalized = await createTestSession({
+    prompt: "Keep finalized archive out of the deletion plan",
+  });
+  const activeSession = await createTestSession({
+    prompt: "Keep active history out of the deletion plan",
+  });
+  const archivedAt = new Date("2026-08-01T12:00:00.000Z");
+  await db
+    .update(analysisSessionsTable)
+    .set({ archivedAt })
+    .where(eq(analysisSessionsTable.id, expiredDraft.id));
+  await db
+    .update(analysisSessionsTable)
+    .set({ archivedAt, finalizedAt: archivedAt })
+    .where(eq(analysisSessionsTable.id, expiredFinalized.id));
+
+  const plan = await db.transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL enable_seqscan = off`);
+    return tx.execute(sql`
+      EXPLAIN DELETE FROM ${analysisSessionsTable}
+      WHERE ${expiredArchivedSessionPredicate(
+        new Date("2026-09-01T12:00:00.000Z"),
+      )}
+    `);
+  });
+  const planText = plan.rows
+    .map((row) => String((row as Record<string, unknown>)["QUERY PLAN"]))
+    .join("\n");
+
+  assert.match(
+    planText,
+    /analysis_sessions_expired_archive_idx/,
+    `Expected expired archive deletion to use analysis_sessions_expired_archive_idx.\n${planText}`,
+  );
+  assert.notEqual(await getSession(activeSession.id), undefined);
 });
 
 test("archived session settings use documented defaults", () => {

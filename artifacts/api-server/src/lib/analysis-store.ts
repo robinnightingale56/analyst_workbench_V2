@@ -129,6 +129,14 @@ async function writeSession(
   return rowToSession(row);
 }
 
+export function expiredArchivedSessionPredicate(cutoff: Date) {
+  return and(
+    isNotNull(analysisSessionsTable.archivedAt),
+    lt(analysisSessionsTable.archivedAt, cutoff),
+    isNull(analysisSessionsTable.finalizedAt),
+  );
+}
+
 export async function purgeExpiredArchivedSessions(now = new Date()) {
   const { retentionDays } = getArchivedSessionSettings();
   const cutoff = new Date(
@@ -136,13 +144,7 @@ export async function purgeExpiredArchivedSessions(now = new Date()) {
   );
   const deleted = await db
     .delete(analysisSessionsTable)
-    .where(
-      and(
-        isNotNull(analysisSessionsTable.archivedAt),
-        lt(analysisSessionsTable.archivedAt, cutoff),
-        isNull(analysisSessionsTable.finalizedAt),
-      ),
-    )
+    .where(expiredArchivedSessionPredicate(cutoff))
     .returning({ id: analysisSessionsTable.id });
   return deleted.length;
 }

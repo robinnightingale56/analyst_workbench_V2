@@ -45,6 +45,11 @@ export const analysisSessionsTable = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    index("analysis_sessions_expired_archive_idx")
+      .on(table.archivedAt)
+      .where(
+        sql`${table.archivedAt} IS NOT NULL AND ${table.finalizedAt} IS NULL`,
+      ),
     index("analysis_sessions_stale_contract_fixture_idx")
       .on(table.createdAt, table.runId)
       .where(
