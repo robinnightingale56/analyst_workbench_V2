@@ -318,7 +318,7 @@ function Home() {
   </div>;
 }
 
-function CountAnswerReview({ session, onUpdated }: { session: AnalysisSession; onUpdated: (session: AnalysisSession) => void }) {
+export function CountAnswerReview({ session, onUpdated }: { session: AnalysisSession; onUpdated: (session: AnalysisSession) => void }) {
   const answer = session.assessment!.countAnswer!;
   const [incidents, setIncidents] = useState<Incident[]>(answer.incidents);
   const [showAdd, setShowAdd] = useState(false);
