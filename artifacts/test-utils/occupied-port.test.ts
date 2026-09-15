@@ -1,12 +1,36 @@
 // @vitest-environment node
 
-import { once } from "node:events";
-import { createServer as createNetServer } from "node:net";
-import { describe, expect, it } from "vitest";
+import { EventEmitter, once } from "node:events";
+import { createServer as createNetServer, type Server } from "node:net";
+import { describe, expect, it, vi } from "vitest";
 
 import { withOccupiedPort } from "./occupied-port";
 
 describe("withOccupiedPort", () => {
+  it("closes the server and preserves the reservation error", async () => {
+    const reservationError = new Error("reservation failed");
+    const occupied = new EventEmitter() as EventEmitter & {
+      listen: ReturnType<typeof vi.fn>;
+      close: ReturnType<typeof vi.fn>;
+    };
+    occupied.listen = vi.fn(() => {
+      queueMicrotask(() => occupied.emit("error", reservationError));
+      return occupied;
+    });
+    occupied.close = vi.fn(() => occupied);
+
+    await expect(
+      withOccupiedPort(
+        async () => {
+          throw new Error("verification should not run");
+        },
+        () => occupied as unknown as Server,
+      ),
+    ).rejects.toBe(reservationError);
+
+    expect(occupied.close).toHaveBeenCalledOnce();
+  });
+
   it("releases the reserved port when the verification callback rejects", async () => {
     let reservedPort: number | undefined;
     const verificationError = new Error("verification failed");
