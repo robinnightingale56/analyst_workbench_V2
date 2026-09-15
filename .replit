@@ -38,6 +38,10 @@ args = "canvas-production-build"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
+args = "canvas-port-contract"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
 args = "stale-api-declarations"
 
 [[workflows.workflow]]
@@ -91,6 +95,17 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "env -u PORT -u BASE_PATH pnpm --filter @workspace/mockup-sandbox run build"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "canvas-port-contract"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/mockup-sandbox run test:port"
 
 [workflows.workflow.metadata]
 isValidation = true
