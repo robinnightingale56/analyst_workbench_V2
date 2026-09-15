@@ -1,34 +1,12 @@
 // @vitest-environment node
 
-import { once } from 'node:events';
-import { createServer as createNetServer } from 'node:net';
-
 import { describe, expect, it } from 'vitest';
 import { createServer, preview } from 'vite';
 
+import { withOccupiedPort } from '../test-utils/occupied-port';
 import { createViteConfig } from './vite.config';
 
 const productionEnv = { NODE_ENV: 'production' };
-
-async function withOccupiedPort(
-  verify: (port: number) => Promise<void>,
-): Promise<void> {
-  const occupied = createNetServer();
-  occupied.listen(0, '127.0.0.1');
-  await once(occupied, 'listening');
-  const address = occupied.address();
-  if (address === null || typeof address === 'string') {
-    occupied.close();
-    throw new Error('Could not reserve a test port');
-  }
-
-  try {
-    await verify(address.port);
-  } finally {
-    occupied.close();
-    await once(occupied, 'close');
-  }
-}
 
 describe('Vite port configuration', () => {
   it('leaves development and preview ports unset when PORT is omitted', async () => {
