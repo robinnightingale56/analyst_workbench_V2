@@ -750,6 +750,83 @@ test("archived session settings preserve configured diagnostic values", () => {
   );
 });
 
+test("health endpoint reports default archive policy diagnostics", async () => {
+  const previousRetention = process.env["ARCHIVED_SESSION_RETENTION_DAYS"];
+  const previousCleanupInterval =
+    process.env["ARCHIVED_SESSION_CLEANUP_INTERVAL_MINUTES"];
+  delete process.env["ARCHIVED_SESSION_RETENTION_DAYS"];
+  delete process.env["ARCHIVED_SESSION_CLEANUP_INTERVAL_MINUTES"];
+
+  try {
+    await withApi(async (baseUrl) => {
+      const health = await requestJson(baseUrl, "/healthz");
+      assert.equal(health.response.status, 200);
+      assert.deepEqual(health.body, {
+        status: "ok",
+        archivePolicy: {
+          retentionDays: 30,
+          cleanupIntervalMinutes: 6 * 60,
+        },
+      });
+    });
+  } finally {
+    if (previousRetention === undefined) {
+      delete process.env["ARCHIVED_SESSION_RETENTION_DAYS"];
+    } else {
+      process.env["ARCHIVED_SESSION_RETENTION_DAYS"] = previousRetention;
+    }
+    if (previousCleanupInterval === undefined) {
+      delete process.env["ARCHIVED_SESSION_CLEANUP_INTERVAL_MINUTES"];
+    } else {
+      process.env["ARCHIVED_SESSION_CLEANUP_INTERVAL_MINUTES"] =
+        previousCleanupInterval;
+    }
+  }
+});
+
+test("health endpoint reports configured archive policy without unrelated environment values", async () => {
+  const previousRetention = process.env["ARCHIVED_SESSION_RETENTION_DAYS"];
+  const previousCleanupInterval =
+    process.env["ARCHIVED_SESSION_CLEANUP_INTERVAL_MINUTES"];
+  const unrelatedKey = "UNRELATED_HEALTH_TEST_VALUE";
+  const previousUnrelated = process.env[unrelatedKey];
+  process.env["ARCHIVED_SESSION_RETENTION_DAYS"] = "12.5";
+  process.env["ARCHIVED_SESSION_CLEANUP_INTERVAL_MINUTES"] = "7.25";
+  process.env[unrelatedKey] = "must-not-leak";
+
+  try {
+    await withApi(async (baseUrl) => {
+      const health = await requestJson(baseUrl, "/healthz");
+      assert.equal(health.response.status, 200);
+      assert.deepEqual(health.body, {
+        status: "ok",
+        archivePolicy: {
+          retentionDays: 12.5,
+          cleanupIntervalMinutes: 7.25,
+        },
+      });
+      assert.equal(JSON.stringify(health.body).includes("must-not-leak"), false);
+    });
+  } finally {
+    if (previousRetention === undefined) {
+      delete process.env["ARCHIVED_SESSION_RETENTION_DAYS"];
+    } else {
+      process.env["ARCHIVED_SESSION_RETENTION_DAYS"] = previousRetention;
+    }
+    if (previousCleanupInterval === undefined) {
+      delete process.env["ARCHIVED_SESSION_CLEANUP_INTERVAL_MINUTES"];
+    } else {
+      process.env["ARCHIVED_SESSION_CLEANUP_INTERVAL_MINUTES"] =
+        previousCleanupInterval;
+    }
+    if (previousUnrelated === undefined) {
+      delete process.env[unrelatedKey];
+    } else {
+      process.env[unrelatedKey] = previousUnrelated;
+    }
+  }
+});
+
 test("configured retention controls the archive cutoff", async () => {
   const retained = await createTestSession({
     prompt: "Retain this archive inside the configured window",
