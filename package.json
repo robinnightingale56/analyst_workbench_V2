@@ -10,10 +10,11 @@
     "test:canvas-publish-contract": "node scripts/validation/canvas-publish-contract.test.mjs",
     "test:shared-port-utils": "pnpm --filter @workspace/test-utils test",
     "test:stale-api-declarations": "node scripts/validation/stale-api-declarations.mjs && node scripts/validation/stale-api-declarations-failure.test.mjs",
+    "test:web-port-coordinator": "node scripts/validation/web-port-coordinator.test.mjs",
     "test:web-port-contracts": "analyst_status=0; canvas_status=0; echo 'Analyst Workbench port contract:'; pnpm --filter @workspace/analyst-workbench run test:port || analyst_status=$?; echo 'Canvas port contract:'; pnpm --filter @workspace/mockup-sandbox run validate:port || canvas_status=$?; if [ \"$analyst_status\" -ne 0 ] || [ \"$canvas_status\" -ne 0 ]; then echo \"Web port contract validation failed (Analyst Workbench: $analyst_status; Canvas: $canvas_status).\" >&2; exit 1; fi",
     "typecheck:libs": "tsc --build --force",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
-    "validate": "pnpm --filter @workspace/api-server test && pnpm --filter @workspace/analyst-workbench test && pnpm --filter @workspace/mockup-sandbox run validate:preview-path && pnpm --filter @workspace/mockup-sandbox run validate:port && pnpm run test:stale-api-declarations && pnpm run build"
+    "validate": "pnpm --filter @workspace/api-server test && pnpm --filter @workspace/analyst-workbench test && pnpm --filter @workspace/mockup-sandbox run validate:preview-path && pnpm --filter @workspace/mockup-sandbox run validate:port && pnpm run test:web-port-coordinator && pnpm run test:stale-api-declarations && pnpm run build"
   },
   "private": true,
   "dependencies": {
