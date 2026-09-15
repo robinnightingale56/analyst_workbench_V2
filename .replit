@@ -24,6 +24,10 @@ args = "incident-count-contract"
 task = "workflow.run"
 args = "analyst-review-conflict"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "analyst-workbench-build"
+
 [[workflows.workflow]]
 name = "incident-count-contract"
 author = "agent"
@@ -45,6 +49,17 @@ args = "pnpm --filter @workspace/analyst-workbench exec vitest run --config vite
 
 [workflows.workflow.metadata]
 isValidation = true
+
+[[workflows.workflow]]
+name = "analyst-workbench-build"
+author = "agent"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=5173 BASE_PATH=/ pnpm --filter @workspace/analyst-workbench run build"
 
 [agent]
 stack = "PNPM_WORKSPACE"
