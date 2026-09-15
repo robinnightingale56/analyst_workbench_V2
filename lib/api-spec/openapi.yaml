@@ -28,6 +28,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+        "503":
+          description: Archive policy configuration is invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthDegraded"
   /analysis-sessions:
     get:
       operationId: listAnalysisSessions
@@ -246,6 +252,14 @@ components:
       required:
         - status
         - archivePolicy
+    HealthDegraded:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+          const: Archive policy configuration is invalid
     ErrorResponse:
       type: object
       required: [error]

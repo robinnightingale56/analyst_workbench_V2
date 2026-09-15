@@ -15,6 +15,11 @@ export interface HealthStatus {
   archivePolicy: HealthStatusArchivePolicy;
 }
 
+export const HealthDegradedValue = {
+  error: 'Archive policy configuration is invalid',
+} as const;
+export type HealthDegraded = typeof HealthDegradedValue;
+
 export interface ErrorResponse {
   error: string;
 }
