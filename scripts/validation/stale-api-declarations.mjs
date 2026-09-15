@@ -13,6 +13,10 @@ const schemaDeclarationPath = path.join(
   workspaceRoot,
   "lib/api-client-react/dist/generated/api.schemas.d.ts",
 );
+const validationDeclarationPath = path.join(
+  workspaceRoot,
+  "lib/api-zod/dist/generated/api.d.ts",
+);
 
 const runPnpm = (...args) => {
   const result = spawnSync("pnpm", args, {
@@ -45,6 +49,10 @@ runPnpm("run", "typecheck:libs");
 
 const freshApiDeclaration = await readFile(apiDeclarationPath, "utf8");
 const freshSchemaDeclaration = await readFile(schemaDeclarationPath, "utf8");
+const freshValidationDeclaration = await readFile(
+  validationDeclarationPath,
+  "utf8",
+);
 
 const staleApiDeclaration = removeRequiredText(
   freshApiDeclaration,
@@ -62,11 +70,22 @@ staleSchemaDeclaration = removeRequiredText(
   /^\s*\/\*\* @minimum 1 \*\/\n\s*version: number;\n/m,
   "session version field",
 );
+let staleValidationDeclaration = removeRequiredText(
+  freshValidationDeclaration,
+  "export declare const UpdateIncidentReviewBody:",
+  "incident-review request schema",
+);
+staleValidationDeclaration = removeRequiredText(
+  staleValidationDeclaration,
+  "export declare const UpdateIncidentReviewResponse:",
+  "incident-review response schema",
+);
 
 try {
   await Promise.all([
     writeFile(apiDeclarationPath, staleApiDeclaration),
     writeFile(schemaDeclarationPath, staleSchemaDeclaration),
+    writeFile(validationDeclarationPath, staleValidationDeclaration),
   ]);
 
   // Keep the stale declarations newer than their inputs. The canonical command
@@ -75,12 +94,17 @@ try {
   await Promise.all([
     utimes(apiDeclarationPath, future, future),
     utimes(schemaDeclarationPath, future, future),
+    utimes(validationDeclarationPath, future, future),
   ]);
 
   runPnpm("run", "typecheck");
 
   const regeneratedApiDeclaration = await readFile(apiDeclarationPath, "utf8");
   const regeneratedSchemaDeclaration = await readFile(schemaDeclarationPath, "utf8");
+  const regeneratedValidationDeclaration = await readFile(
+    validationDeclarationPath,
+    "utf8",
+  );
 
   assert.match(
     regeneratedApiDeclaration,
@@ -97,11 +121,22 @@ try {
     /^\s*version: number;$/m,
     "Canonical typecheck did not restore the session version field",
   );
+  assert.match(
+    regeneratedValidationDeclaration,
+    /export declare const UpdateIncidentReviewBody:/,
+    "Canonical typecheck did not restore the incident-review request schema before checking the API server",
+  );
+  assert.match(
+    regeneratedValidationDeclaration,
+    /export declare const UpdateIncidentReviewResponse:/,
+    "Canonical typecheck did not restore the incident-review response schema before checking the API server",
+  );
 } finally {
   // A failing regression must not leave the ignored local output corrupted.
   await Promise.all([
     writeFile(apiDeclarationPath, freshApiDeclaration),
     writeFile(schemaDeclarationPath, freshSchemaDeclaration),
+    writeFile(validationDeclarationPath, freshValidationDeclaration),
   ]);
 }
 
