@@ -2,13 +2,15 @@
   "name": "workspace",
   "version": "0.0.0",
   "license": "MIT",
+  "packageManager": "pnpm@10.26.1",
   "scripts": {
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "test:incident-review-evidence-contract": "pnpm run typecheck:libs && pnpm --filter @workspace/scripts exec tsx validation/incident-review-evidence-contract.test.ts",
     "test:stale-api-declarations": "node scripts/validation/stale-api-declarations.mjs && node scripts/validation/stale-api-declarations-failure.test.mjs",
     "typecheck:libs": "tsc --build --force",
-    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
+    "validate": "pnpm --filter @workspace/api-server test && pnpm --filter @workspace/analyst-workbench test && pnpm --filter @workspace/mockup-sandbox run test:asset-path && pnpm --filter @workspace/mockup-sandbox run validate:port && pnpm run test:stale-api-declarations && pnpm run build"
   },
   "private": true,
   "dependencies": {

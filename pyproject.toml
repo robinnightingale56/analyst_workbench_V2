@@ -1,7 +1,7 @@
 [project]
 name = "repl-nix-workspace"
 version = "0.1.0"
-description = "Add your description here"
+description = "Source-backed intelligence research and analytic assessment workspace"
 requires-python = ">=3.12"
 dependencies = [
     "beautifulsoup4>=4.15.0",
