@@ -38,6 +38,10 @@ args = "canvas-production-build"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
+args = "canvas-preview-build"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
 args = "canvas-port-contract"
 
 [[workflows.workflow.tasks]]
@@ -95,6 +99,17 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "env -u PORT -u BASE_PATH pnpm --filter @workspace/mockup-sandbox run build"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "canvas-preview-build"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=5173 BASE_PATH=/__mockup/ pnpm --filter @workspace/mockup-sandbox run build"
 
 [workflows.workflow.metadata]
 isValidation = true
