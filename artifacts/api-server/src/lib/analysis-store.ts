@@ -1,5 +1,5 @@
 import { analysisSessionsTable, db } from "@workspace/db";
-import { and, desc, eq, isNotNull, isNull, lt } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, lt, ne } from "drizzle-orm";
 import { assessSources } from "./analysis-engine";
 import { getArchivedSessionSettings } from "./archived-session-settings";
 import { logger } from "./logger";
@@ -45,6 +45,7 @@ export class FinalizedAnalysisArchiveError extends Error {
 }
 
 const seededId = "demo-session";
+export const CONTRACT_TEST_PROVENANCE = "CONTRACT_TEST";
 
 function rowToSession(row: typeof analysisSessionsTable.$inferSelect): AnalysisSession {
   const data = row.data as Omit<AnalysisSession, "version" | "updatedAt">;
@@ -129,6 +130,26 @@ export async function purgeExpiredArchivedSessions(now = new Date()) {
   return deleted.length;
 }
 
+export async function purgeStaleContractFixtures(
+  activeRunId: string,
+  now = new Date(),
+  staleAfterMs = 60 * 60 * 1000,
+) {
+  const cutoff = new Date(now.getTime() - staleAfterMs);
+  const deleted = await db
+    .delete(analysisSessionsTable)
+    .where(
+      and(
+        eq(analysisSessionsTable.provenance, CONTRACT_TEST_PROVENANCE),
+        isNotNull(analysisSessionsTable.runId),
+        ne(analysisSessionsTable.runId, activeRunId),
+        lt(analysisSessionsTable.createdAt, cutoff),
+      ),
+    )
+    .returning({ id: analysisSessionsTable.id });
+  return deleted.length;
+}
+
 export async function listSessions(includeArchived = false) {
   await ensureDemonstrationSession();
   try {
@@ -169,7 +190,12 @@ export async function createSession(input: {
   prompt: string;
   analyst?: string;
   classification?: AnalysisSession["classification"];
+  provenance?: typeof CONTRACT_TEST_PROVENANCE;
+  runId?: string;
 }) {
+  if ((input.provenance === CONTRACT_TEST_PROVENANCE) !== Boolean(input.runId)) {
+    throw new Error("Contract test sessions require both provenance and runId");
+  }
   const now = new Date();
   const data: Omit<AnalysisSession, "version" | "updatedAt" | "archivedAt"> = {
     id: crypto.randomUUID(),
@@ -184,7 +210,15 @@ export async function createSession(input: {
   };
   const [row] = await db
     .insert(analysisSessionsTable)
-    .values({ id: data.id, data, version: 1, createdAt: now, updatedAt: now })
+    .values({
+      id: data.id,
+      data,
+      provenance: input.provenance ?? "USER",
+      runId: input.runId,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    })
     .returning();
   return rowToSession(row!);
 }

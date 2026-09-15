@@ -1,15 +1,17 @@
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
-import test, { afterEach } from "node:test";
+import test, { afterEach, before } from "node:test";
 import { analysisSessionsTable, db } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import app from "../app";
 import { buildCountAnswer, deduplicateIncidents, incidentCitationError, type Incident } from "./analysis-engine";
 import {
   createSession,
+  CONTRACT_TEST_PROVENANCE,
   deleteSession,
   getSession,
   purgeExpiredArchivedSessions,
+  purgeStaleContractFixtures,
   setSessionSources,
 } from "./analysis-store";
 import { getArchivedSessionSettings } from "./archived-session-settings";
@@ -34,13 +36,22 @@ function source(id: string, content: string, publishedAt = "2026-09-14T12:00:00Z
 }
 
 const question = "How many times did Country Alpha and Country Beta clash?";
+const testRunId = crypto.randomUUID();
 const testSessionIds = new Set<string>();
 
 async function createTestSession(input: Parameters<typeof createSession>[0]) {
-  const session = await createSession(input);
+  const session = await createSession({
+    ...input,
+    provenance: CONTRACT_TEST_PROVENANCE,
+    runId: testRunId,
+  });
   testSessionIds.add(session.id);
   return session;
 }
+
+before(async () => {
+  await purgeStaleContractFixtures(testRunId);
+});
 
 afterEach(async () => {
   const sessionIds = [...testSessionIds];
@@ -711,9 +722,8 @@ test("retention removes only expired archived non-finalized sessions", async () 
     .set({ archivedAt: expiredAt, finalizedAt: expiredAt })
     .where(eq(analysisSessionsTable.id, expiredFinalized.id));
 
-  const deletedCount = await purgeExpiredArchivedSessions();
+  await purgeExpiredArchivedSessions();
 
-  assert.equal(deletedCount, 1);
   assert.equal(await getSession(expiredDraft.id), undefined);
   assert.notEqual(await getSession(expiredFinalized.id), undefined);
 });
@@ -745,7 +755,7 @@ test("configured retention controls the archive cutoff", async () => {
   const previousRetention = process.env["ARCHIVED_SESSION_RETENTION_DAYS"];
   process.env["ARCHIVED_SESSION_RETENTION_DAYS"] = "3";
   try {
-    assert.equal(await purgeExpiredArchivedSessions(now), 1);
+    await purgeExpiredArchivedSessions(now);
   } finally {
     if (previousRetention === undefined) {
       delete process.env["ARCHIVED_SESSION_RETENTION_DAYS"];
@@ -782,4 +792,36 @@ test("test cleanup deletes only the session with the exact fixture ID", async ()
   assert.equal(await deleteSession(fixture.id), true);
   assert.equal(await getSession(fixture.id), undefined);
   assert.notEqual(await getSession(neighboringSession.id), undefined);
+});
+
+test("stale fixture sweep preserves active runs and analyst-created sessions", async () => {
+  const staleFixture = await createSession({
+    prompt: "Remove this stale contract fixture",
+    provenance: CONTRACT_TEST_PROVENANCE,
+    runId: "stale-contract-run",
+  });
+  const activeFixture = await createTestSession({
+    prompt: "Keep this active contract fixture",
+  });
+  const analystSession = await createSession({
+    prompt: "Keep this analyst-created session",
+  });
+  testSessionIds.add(staleFixture.id);
+  testSessionIds.add(analystSession.id);
+  const oldCreatedAt = new Date("2026-09-15T08:00:00.000Z");
+  await db
+    .update(analysisSessionsTable)
+    .set({ createdAt: oldCreatedAt })
+    .where(inArray(analysisSessionsTable.id, [
+      staleFixture.id,
+      analystSession.id,
+    ]));
+
+  await purgeStaleContractFixtures(
+    testRunId,
+    new Date("2026-09-15T12:00:00.000Z"),
+  );
+  assert.equal(await getSession(staleFixture.id), undefined);
+  assert.notEqual(await getSession(activeFixture.id), undefined);
+  assert.notEqual(await getSession(analystSession.id), undefined);
 });

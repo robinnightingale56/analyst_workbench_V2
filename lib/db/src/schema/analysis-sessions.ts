@@ -5,6 +5,8 @@ import { z } from "zod/v4";
 export const analysisSessionsTable = pgTable("analysis_sessions", {
   id: text("id").primaryKey(),
   data: jsonb("data").notNull(),
+  provenance: text("provenance").notNull().default("USER"),
+  runId: text("run_id"),
   version: integer("version").notNull().default(1),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
   finalizedAt: timestamp("finalized_at", { withTimezone: true }),
