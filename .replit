@@ -34,15 +34,15 @@ args = "analyst-workbench-production-build"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "canvas-production-build"
+args = "canvas-production-bundle"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "canvas-preview-build"
+args = "canvas-preview-bundle"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "canvas-port-contract"
+args = "canvas-port-behavior"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
@@ -93,34 +93,34 @@ args = "env -u PORT -u BASE_PATH pnpm --filter @workspace/analyst-workbench run 
 isValidation = true
 
 [[workflows.workflow]]
-name = "canvas-production-build"
+name = "canvas-production-bundle"
 author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "env -u PORT -u BASE_PATH pnpm --filter @workspace/mockup-sandbox run build"
+args = "env -u PORT -u BASE_PATH pnpm --filter @workspace/mockup-sandbox run validate:bundle"
 
 [workflows.workflow.metadata]
 isValidation = true
 
 [[workflows.workflow]]
-name = "canvas-preview-build"
+name = "canvas-preview-bundle"
 author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=5173 BASE_PATH=/__mockup/ pnpm --filter @workspace/mockup-sandbox run build"
+args = "PORT=5173 BASE_PATH=/__mockup/ pnpm --filter @workspace/mockup-sandbox run validate:bundle"
 
 [workflows.workflow.metadata]
 isValidation = true
 
 [[workflows.workflow]]
-name = "canvas-port-contract"
+name = "canvas-port-behavior"
 author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "pnpm --filter @workspace/mockup-sandbox run test:port"
+args = "pnpm --filter @workspace/mockup-sandbox run validate:port"
 
 [workflows.workflow.metadata]
 isValidation = true

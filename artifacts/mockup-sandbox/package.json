@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
+    "validate:bundle": "vite build || (echo 'Canvas bundle validation failed. Re-run: pnpm --filter @workspace/mockup-sandbox run validate:bundle' >&2; exit 1)",
     "preview": "vite preview",
     "test:port": "vitest run --config vitest.config.ts port-config.test.ts",
+    "validate:port": "vitest run --config vitest.config.ts port-config.test.ts || (echo 'Canvas port behavior validation failed. Re-run: pnpm --filter @workspace/mockup-sandbox run validate:port' >&2; exit 1)",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
