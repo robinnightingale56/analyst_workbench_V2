@@ -731,8 +731,23 @@ test("retention removes only expired archived non-finalized sessions", async () 
 test("archived session settings use documented defaults", () => {
   assert.deepEqual(getArchivedSessionSettings({}), {
     retentionDays: 30,
+    cleanupIntervalMinutes: 6 * 60,
     cleanupIntervalMs: 6 * 60 * 60 * 1000,
   });
+});
+
+test("archived session settings preserve configured diagnostic values", () => {
+  assert.deepEqual(
+    getArchivedSessionSettings({
+      ARCHIVED_SESSION_RETENTION_DAYS: "12.5",
+      ARCHIVED_SESSION_CLEANUP_INTERVAL_MINUTES: "7.25",
+    }),
+    {
+      retentionDays: 12.5,
+      cleanupIntervalMinutes: 7.25,
+      cleanupIntervalMs: 7.25 * 60 * 1000,
+    },
+  );
 });
 
 test("configured retention controls the archive cutoff", async () => {

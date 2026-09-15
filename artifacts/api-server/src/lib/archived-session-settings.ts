@@ -4,6 +4,7 @@ const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 export type ArchivedSessionSettings = {
   retentionDays: number;
+  cleanupIntervalMinutes: number;
   cleanupIntervalMs: number;
 };
 
@@ -45,5 +46,5 @@ export function getArchivedSessionSettings(
     );
   }
 
-  return { retentionDays, cleanupIntervalMs };
+  return { retentionDays, cleanupIntervalMinutes, cleanupIntervalMs };
 }

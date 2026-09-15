@@ -25,6 +25,7 @@ export * from './evaluationVectorDefinition';
 export * from './evaluationVectorResult';
 export * from './evaluationVectorResultStatus';
 export * from './healthStatus';
+export * from './healthStatusArchivePolicy';
 export * from './historicalRating';
 export * from './historicalRatingRating';
 export * from './incident';

@@ -232,8 +232,20 @@ components:
       properties:
         status:
           type: string
+        archivePolicy:
+          type: object
+          additionalProperties: false
+          properties:
+            retentionDays:
+              type: number
+            cleanupIntervalMinutes:
+              type: number
+          required:
+            - retentionDays
+            - cleanupIntervalMinutes
       required:
         - status
+        - archivePolicy
     ErrorResponse:
       type: object
       required: [error]

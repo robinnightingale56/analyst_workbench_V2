@@ -5,8 +5,14 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export type HealthStatusArchivePolicy = {
+  retentionDays: number;
+  cleanupIntervalMinutes: number;
+};
+
 export interface HealthStatus {
   status: string;
+  archivePolicy: HealthStatusArchivePolicy;
 }
 
 export interface ErrorResponse {
