@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
-import test from "node:test";
+import test, { afterEach } from "node:test";
 import { analysisSessionsTable, db } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import app from "../app";
 import { buildCountAnswer, deduplicateIncidents, incidentCitationError, type Incident } from "./analysis-engine";
 import {
   createSession,
+  deleteSession,
   getSession,
   purgeExpiredArchivedSessions,
   setSessionSources,
@@ -32,6 +33,19 @@ function source(id: string, content: string, publishedAt = "2026-09-14T12:00:00Z
 }
 
 const question = "How many times did Country Alpha and Country Beta clash?";
+const testSessionIds = new Set<string>();
+
+async function createTestSession(input: Parameters<typeof createSession>[0]) {
+  const session = await createSession(input);
+  testSessionIds.add(session.id);
+  return session;
+}
+
+afterEach(async () => {
+  const sessionIds = [...testSessionIds];
+  testSessionIds.clear();
+  await Promise.all(sessionIds.map((id) => deleteSession(id)));
+});
 
 test("does not create a count answer for a non-count assessment", () => {
   assert.equal(
@@ -405,7 +419,7 @@ async function requestJson(
 }
 
 async function createCountSession() {
-  const session = await createSession({ prompt: question });
+  const session = await createTestSession({ prompt: question });
   return (await setSessionSources(session.id, [
     {
       ...source("a", "Country Alpha and Country Beta clashed at North Ridge on 12 September 2026."),
@@ -590,7 +604,7 @@ test("API review contract rejects a stale concurrent update", async () => {
 
 test("archived sessions are hidden by default and can be restored", async () => {
   await withApi(async (baseUrl) => {
-    const session = await createSession({ prompt: "Archive this obsolete draft session" });
+    const session = await createTestSession({ prompt: "Archive this obsolete draft session" });
     const archived = await requestJson(
       baseUrl,
       `/analysis-sessions/${session.id}`,
@@ -680,10 +694,10 @@ test("finalized reviews cannot be archived", async () => {
 });
 
 test("retention removes only expired archived non-finalized sessions", async () => {
-  const expiredDraft = await createSession({
+  const expiredDraft = await createTestSession({
     prompt: "Expire this archived test session",
   });
-  const expiredFinalized = await createSession({
+  const expiredFinalized = await createTestSession({
     prompt: "Retain this finalized archived test session",
   });
   const expiredAt = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
@@ -701,8 +715,13 @@ test("retention removes only expired archived non-finalized sessions", async () 
   assert.equal(deletedCount, 1);
   assert.equal(await getSession(expiredDraft.id), undefined);
   assert.notEqual(await getSession(expiredFinalized.id), undefined);
+});
 
-  await db
-    .delete(analysisSessionsTable)
-    .where(eq(analysisSessionsTable.id, expiredFinalized.id));
+test("test cleanup deletes only the session with the exact fixture ID", async () => {
+  const fixture = await createTestSession({ prompt: "Delete only this contract fixture" });
+  const neighboringSession = await createTestSession({ prompt: "Keep this neighboring session" });
+
+  assert.equal(await deleteSession(fixture.id), true);
+  assert.equal(await getSession(fixture.id), undefined);
+  assert.notEqual(await getSession(neighboringSession.id), undefined);
 });

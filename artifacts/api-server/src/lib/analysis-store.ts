@@ -156,6 +156,14 @@ export async function getSession(id: string) {
   return row ? rowToSession(row) : undefined;
 }
 
+export async function deleteSession(id: string) {
+  const deleted = await db
+    .delete(analysisSessionsTable)
+    .where(eq(analysisSessionsTable.id, id))
+    .returning({ id: analysisSessionsTable.id });
+  return deleted.length === 1;
+}
+
 export async function createSession(input: {
   prompt: string;
   analyst?: string;
