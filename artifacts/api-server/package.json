@@ -10,6 +10,7 @@
     "typecheck": "python -m compileall -q src/api_server",
     "test": "pytest -q",
     "test:contract": "pytest -q",
+    "test:health": "pytest -q tests/test_health.py",
     "test:concurrent": "pytest -q"
   },
   "dependencies": {

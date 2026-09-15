@@ -11,7 +11,6 @@ os.environ.pop("DATABASE_URL", None)
 os.environ["API_DATABASE_URL"] = f"sqlite:///{_db_file}"
 
 from api_server.engine import build_count_answer  # noqa: E402
-from api_server.config import get_settings  # noqa: E402
 from api_server.store import (  # noqa: E402
     AnalysisVersionConflictError,
     _write,
@@ -21,29 +20,6 @@ from api_server.store import (  # noqa: E402
 from api_server.main import app  # noqa: E402
 from api_server.models import Incident  # noqa: E402
 from api_server.store import list_sessions  # noqa: E402
-
-
-def test_health_reports_invalid_archive_configuration_without_leaking_environment(monkeypatch):
-    malformed_value = "never-expose-this-value"
-    unrelated_value = "unrelated-secret-value"
-    monkeypatch.setenv("ARCHIVED_SESSION_RETENTION_DAYS", malformed_value)
-    monkeypatch.setenv("UNRELATED_HEALTH_TEST_VALUE", unrelated_value)
-    get_settings.cache_clear()
-
-    try:
-        with TestClient(app) as client:
-            response = client.get("/api/healthz")
-        assert response.status_code == 503
-        assert response.json() == {
-            "error": "Archive policy configuration is invalid",
-        }
-        response_text = response.text
-        assert malformed_value not in response_text
-        assert unrelated_value not in response_text
-        assert "ARCHIVED_SESSION_RETENTION_DAYS" not in response_text
-        assert "UNRELATED_HEALTH_TEST_VALUE" not in response_text
-    finally:
-        get_settings.cache_clear()
 
 
 def _source(source_id: str, content: str) -> dict:
