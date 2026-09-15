@@ -64,7 +64,7 @@ export async function createViteConfig(
       emptyOutDir: true,
     },
     server: {
-      ...(port === undefined ? {} : { port }),
+      ...(port === undefined ? {} : { port, strictPort: true }),
       host: "0.0.0.0",
       allowedHosts: true,
       fs: {
@@ -72,7 +72,7 @@ export async function createViteConfig(
       },
     },
     preview: {
-      ...(port === undefined ? {} : { port }),
+      ...(port === undefined ? {} : { port, strictPort: true }),
       host: "0.0.0.0",
       allowedHosts: true,
     },

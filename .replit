@@ -90,7 +90,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=5173 BASE_PATH=/__mockup/ pnpm --filter @workspace/mockup-sandbox run build"
+args = "env -u PORT -u BASE_PATH pnpm --filter @workspace/mockup-sandbox run build"
 
 [workflows.workflow.metadata]
 isValidation = true
