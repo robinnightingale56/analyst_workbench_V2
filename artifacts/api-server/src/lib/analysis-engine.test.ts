@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import test, { afterEach, before } from "node:test";
-import { analysisSessionsTable, db } from "@workspace/db";
+import {
+  ANALYSIS_SESSION_OWNERSHIP_RULES,
+  analysisSessionsTable,
+  db,
+  USER_PROVENANCE,
+} from "@workspace/db";
 import { eq, inArray } from "drizzle-orm";
 import app from "../app";
 import { buildCountAnswer, deduplicateIncidents, incidentCitationError, type Incident } from "./analysis-engine";
@@ -886,7 +891,20 @@ test("test cleanup deletes only the session with the exact fixture ID", async ()
   assert.notEqual(await getSession(neighboringSession.id), undefined);
 });
 
-test("database rejects inconsistent session ownership metadata", async () => {
+test("API rejects every ownership rule with inconsistent run metadata", async () => {
+  for (const rule of ANALYSIS_SESSION_OWNERSHIP_RULES) {
+    await assert.rejects(
+      createSession({
+        prompt: "Invalid ownership metadata",
+        provenance: rule.provenance,
+        runId: rule.requiresRunId ? undefined : testRunId,
+      }),
+      /provenance and runId are inconsistent/,
+    );
+  }
+});
+
+test("database rejects every ownership rule with inconsistent run metadata", async () => {
   const data = {
     id: "invalid-ownership",
     prompt: "Invalid ownership metadata",
@@ -903,28 +921,20 @@ test("database rejects inconsistent session ownership metadata", async () => {
     error.cause instanceof Error &&
     /analysis_sessions_ownership_check/.test(error.cause.message);
 
-  await assert.rejects(
-    db.insert(analysisSessionsTable).values({
-      id: crypto.randomUUID(),
-      data,
-      provenance: CONTRACT_TEST_PROVENANCE,
-    }),
-    isOwnershipConstraintError,
-  );
-  await assert.rejects(
-    db.insert(analysisSessionsTable).values({
-      id: crypto.randomUUID(),
-      data,
-      provenance: "USER",
-      runId: testRunId,
-    }),
-    isOwnershipConstraintError,
-  );
+  for (const rule of ANALYSIS_SESSION_OWNERSHIP_RULES) {
+    await assert.rejects(
+      db.insert(analysisSessionsTable).values({
+        id: crypto.randomUUID(),
+        data,
+        provenance: rule.provenance,
+        runId: rule.requiresRunId ? undefined : testRunId,
+      }),
+      isOwnershipConstraintError,
+    );
+  }
 });
 
 test("database accepts valid analyst and contract ownership metadata", async () => {
-  const analystId = crypto.randomUUID();
-  const contractId = crypto.randomUUID();
   const data = {
     id: "valid-ownership",
     prompt: "Valid ownership metadata",
@@ -937,17 +947,15 @@ test("database accepts valid analyst and contract ownership metadata", async () 
     assessment: null,
   };
 
-  await db.insert(analysisSessionsTable).values([
-    { id: analystId, data, provenance: "USER" },
-    {
-      id: contractId,
-      data,
-      provenance: CONTRACT_TEST_PROVENANCE,
-      runId: testRunId,
-    },
-  ]);
-  testSessionIds.add(analystId);
-  testSessionIds.add(contractId);
+  const rows = ANALYSIS_SESSION_OWNERSHIP_RULES.map((rule) => ({
+    id: crypto.randomUUID(),
+    data,
+    provenance: rule.provenance,
+    runId: rule.requiresRunId ? testRunId : undefined,
+  }));
+
+  await db.insert(analysisSessionsTable).values(rows);
+  rows.forEach(({ id }) => testSessionIds.add(id));
 });
 
 test("stale fixture sweep preserves active runs and analyst-created sessions", async () => {

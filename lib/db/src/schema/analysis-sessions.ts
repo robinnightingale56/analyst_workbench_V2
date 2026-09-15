@@ -11,12 +11,32 @@ import {
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
+export const ANALYSIS_SESSION_OWNERSHIP_RULES = [
+  { provenance: "USER", requiresRunId: false },
+  { provenance: "CONTRACT_TEST", requiresRunId: true },
+] as const;
+
+export type AnalysisSessionProvenance =
+  (typeof ANALYSIS_SESSION_OWNERSHIP_RULES)[number]["provenance"];
+
+export const USER_PROVENANCE = "USER" satisfies AnalysisSessionProvenance;
+export const CONTRACT_TEST_PROVENANCE =
+  "CONTRACT_TEST" satisfies AnalysisSessionProvenance;
+
+const ownershipCheckSql = ANALYSIS_SESSION_OWNERSHIP_RULES.map(
+  ({ provenance, requiresRunId }) =>
+    `(provenance = '${provenance}' AND run_id IS ${requiresRunId ? "NOT " : ""}NULL)`,
+).join(" OR ");
+
 export const analysisSessionsTable = pgTable(
   "analysis_sessions",
   {
     id: text("id").primaryKey(),
     data: jsonb("data").notNull(),
-    provenance: text("provenance").notNull().default("USER"),
+    provenance: text("provenance")
+      .$type<AnalysisSessionProvenance>()
+      .notNull()
+      .default(USER_PROVENANCE),
     runId: text("run_id"),
     version: integer("version").notNull().default(1),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
@@ -32,7 +52,7 @@ export const analysisSessionsTable = pgTable(
       ),
     check(
       "analysis_sessions_ownership_check",
-      sql`(${table.provenance} = 'CONTRACT_TEST' AND ${table.runId} IS NOT NULL) OR (${table.provenance} = 'USER' AND ${table.runId} IS NULL)`,
+      sql.raw(ownershipCheckSql),
     ),
   ],
 );

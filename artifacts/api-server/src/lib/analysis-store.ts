@@ -1,4 +1,11 @@
-import { analysisSessionsTable, db } from "@workspace/db";
+import {
+  ANALYSIS_SESSION_OWNERSHIP_RULES,
+  analysisSessionsTable,
+  CONTRACT_TEST_PROVENANCE,
+  db,
+  USER_PROVENANCE,
+  type AnalysisSessionProvenance,
+} from "@workspace/db";
 import { and, desc, eq, isNotNull, isNull, lt, ne } from "drizzle-orm";
 import { assessSources } from "./analysis-engine";
 import { getArchivedSessionSettings } from "./archived-session-settings";
@@ -45,7 +52,17 @@ export class FinalizedAnalysisArchiveError extends Error {
 }
 
 const seededId = "demo-session";
-export const CONTRACT_TEST_PROVENANCE = "CONTRACT_TEST";
+export { CONTRACT_TEST_PROVENANCE };
+
+function isValidOwnership(
+  provenance: AnalysisSessionProvenance,
+  runId: string | undefined,
+) {
+  const rule = ANALYSIS_SESSION_OWNERSHIP_RULES.find(
+    (candidate) => candidate.provenance === provenance,
+  );
+  return rule !== undefined && rule.requiresRunId === Boolean(runId);
+}
 
 function rowToSession(row: typeof analysisSessionsTable.$inferSelect): AnalysisSession {
   const data = row.data as Omit<AnalysisSession, "version" | "updatedAt">;
@@ -190,11 +207,12 @@ export async function createSession(input: {
   prompt: string;
   analyst?: string;
   classification?: AnalysisSession["classification"];
-  provenance?: typeof CONTRACT_TEST_PROVENANCE;
+  provenance?: AnalysisSessionProvenance;
   runId?: string;
 }) {
-  if ((input.provenance === CONTRACT_TEST_PROVENANCE) !== Boolean(input.runId)) {
-    throw new Error("Contract test sessions require both provenance and runId");
+  const provenance = input.provenance ?? USER_PROVENANCE;
+  if (!isValidOwnership(provenance, input.runId)) {
+    throw new Error("Analysis session provenance and runId are inconsistent");
   }
   const now = new Date();
   const data: Omit<AnalysisSession, "version" | "updatedAt" | "archivedAt"> = {
@@ -213,7 +231,7 @@ export async function createSession(input: {
     .values({
       id: data.id,
       data,
-      provenance: input.provenance ?? "USER",
+      provenance,
       runId: input.runId,
       version: 1,
       createdAt: now,
