@@ -28,6 +28,10 @@ args = "analyst-review-conflict"
 task = "workflow.run"
 args = "analyst-workbench-build"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "analyst-workbench-production-build"
+
 [[workflows.workflow]]
 name = "incident-count-contract"
 author = "agent"
@@ -60,6 +64,17 @@ isValidation = true
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "PORT=5173 BASE_PATH=/ pnpm --filter @workspace/analyst-workbench run build"
+
+[[workflows.workflow]]
+name = "analyst-workbench-production-build"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "env -u PORT -u BASE_PATH pnpm --filter @workspace/analyst-workbench run build"
+
+[workflows.workflow.metadata]
+isValidation = true
 
 [agent]
 stack = "PNPM_WORKSPACE"
