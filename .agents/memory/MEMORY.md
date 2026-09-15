@@ -1,3 +1,4 @@
 - [Factual count evidence](factual-count-evidence.md) — count answers require affirmative incident-level support; absence of extractable evidence is never a factual zero.
 - [Generated declaration freshness](generated-declaration-freshness.md) — library type checks must rebuild ignored declarations despite stale incremental metadata.
 - [PostgreSQL whitespace constraints](postgres-whitespace-constraints.md) — use POSIX whitespace checks, and rename changed Drizzle checks so schema push applies them.
+- [PostgreSQL contract isolation](postgres-contract-isolation.md) — destructive compatibility checks must run in a cloned temporary schema, never the shared development table.

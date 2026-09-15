@@ -1,4 +1,4 @@
-modules = ["nodejs-24", "python-3.12"]
+modules = ["nodejs-24", "python-3.12", "postgresql-16"]
 
 [deployment]
 router = "application"
@@ -118,3 +118,14 @@ timeoutMs = 20000
 channel = "stable-25_05"
 packages = ["glibcLocales", "postgresql", "xcodebuild", "zlib"]
 
+
+[[workflows.workflow]]
+name = "postgres-compatibility-contract"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/api-server run test:postgres"
+
+[workflows.workflow.metadata]
+isValidation = true
