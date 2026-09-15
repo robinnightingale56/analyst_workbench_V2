@@ -10,6 +10,7 @@
     "validate:bundle:all": "env -u PORT -u BASE_PATH pnpm run validate:bundle && PORT=5173 BASE_PATH=/__mockup/ pnpm run validate:bundle",
     "preview": "vite preview",
     "test:asset-path": "vitest run --config vitest.config.ts canvas-asset-path.test.ts",
+    "validate:preview-path": "pnpm run test:asset-path || (echo 'Canvas preview path validation failed. Re-run: pnpm --filter @workspace/mockup-sandbox run validate:preview-path' >&2; exit 1)",
     "test:port": "vitest run --config vitest.config.ts port-config.test.ts",
     "validate:port": "vitest run --config vitest.config.ts port-config.test.ts || (echo 'Canvas port behavior validation failed. Re-run: pnpm --filter @workspace/mockup-sandbox run validate:port' >&2; exit 1)",
     "typecheck": "tsc -p tsconfig.json --noEmit"
