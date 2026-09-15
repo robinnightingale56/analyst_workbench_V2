@@ -177,7 +177,7 @@ def purge_expired_archived_sessions(now: datetime | None = None) -> int:
 
 
 def purge_stale_contract_fixtures(active_run_id: str, now: datetime | None = None, stale_after_ms: int = 3_600_000) -> int:
-    if not active_run_id:
+    if not isinstance(active_run_id, str) or not active_run_id.strip():
         raise ValueError("activeRunId is required for stale contract fixture cleanup")
     cutoff = (now or utcnow()) - timedelta(milliseconds=stale_after_ms)
     with SessionLocal.begin() as db:

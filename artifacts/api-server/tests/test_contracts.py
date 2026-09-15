@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
 import httpx
@@ -19,6 +20,7 @@ from api_server.store import (  # noqa: E402
     _write,
     create_session,
     get_session,
+    purge_stale_contract_fixtures,
 )
 from api_server.db import AnalysisSessionRow, SessionLocal, utcnow  # noqa: E402
 from api_server.main import app  # noqa: E402
@@ -210,6 +212,80 @@ def test_store_accepts_valid_ownership_metadata():
     )
     assert analyst_session["id"]
     assert contract_session["id"]
+
+
+@pytest.mark.parametrize("active_run_id", ["", " \t\n "])
+def test_stale_fixture_cleanup_rejects_blank_active_run_without_deleting_fixtures(
+    active_run_id,
+):
+    now = utcnow()
+    active = create_session(
+        "Keep the active contract fixture",
+        provenance=CONTRACT_TEST_PROVENANCE,
+        run_id="active-contract-run",
+    )
+    other = create_session(
+        "Keep the other valid contract fixture",
+        provenance=CONTRACT_TEST_PROVENANCE,
+        run_id="other-contract-run",
+    )
+    fixture_ids = [active["id"], other["id"]]
+    with SessionLocal.begin() as db:
+        for fixture_id in fixture_ids:
+            db.get(AnalysisSessionRow, fixture_id).created_at = now - timedelta(hours=2)
+
+    with pytest.raises(
+        ValueError,
+        match="activeRunId is required for stale contract fixture cleanup",
+    ):
+        purge_stale_contract_fixtures(
+            active_run_id,
+            now=now,
+            stale_after_ms=3_600_000,
+        )
+
+    with SessionLocal.begin() as db:
+        for fixture_id in fixture_ids:
+            fixture = db.get(AnalysisSessionRow, fixture_id)
+            assert fixture is not None
+            db.delete(fixture)
+
+
+def test_stale_fixture_cleanup_preserves_active_and_recent_runs():
+    now = utcnow()
+    active = create_session(
+        "Keep the active contract fixture",
+        provenance=CONTRACT_TEST_PROVENANCE,
+        run_id="active-cleanup-run",
+    )
+    stale = create_session(
+        "Remove the stale contract fixture",
+        provenance=CONTRACT_TEST_PROVENANCE,
+        run_id="stale-cleanup-run",
+    )
+    recent = create_session(
+        "Keep the recent contract fixture",
+        provenance=CONTRACT_TEST_PROVENANCE,
+        run_id="recent-cleanup-run",
+    )
+    with SessionLocal.begin() as db:
+        db.get(AnalysisSessionRow, active["id"]).created_at = now - timedelta(hours=2)
+        db.get(AnalysisSessionRow, stale["id"]).created_at = now - timedelta(hours=2)
+
+    assert purge_stale_contract_fixtures(
+        "active-cleanup-run",
+        now=now,
+        stale_after_ms=3_600_000,
+    ) == 1
+
+    with SessionLocal.begin() as db:
+        active_row = db.get(AnalysisSessionRow, active["id"])
+        recent_row = db.get(AnalysisSessionRow, recent["id"])
+        assert active_row is not None
+        assert db.get(AnalysisSessionRow, stale["id"]) is None
+        assert recent_row is not None
+        db.delete(active_row)
+        db.delete(recent_row)
 
 
 def test_session_listing_survives_cleanup_failure():
