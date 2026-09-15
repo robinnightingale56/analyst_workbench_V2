@@ -25,7 +25,11 @@ export const CONTRACT_TEST_PROVENANCE =
 
 const ownershipCheckSql = ANALYSIS_SESSION_OWNERSHIP_RULES.map(
   ({ provenance, requiresRunId }) =>
-    `(provenance = '${provenance}' AND run_id IS ${requiresRunId ? "NOT " : ""}NULL)`,
+    `(provenance = '${provenance}' AND ${
+      requiresRunId
+        ? "run_id IS NOT NULL AND run_id !~ '^[[:space:]]*$'"
+        : "run_id IS NULL"
+    })`,
 ).join(" OR ");
 
 export const analysisSessionsTable = pgTable(
@@ -53,10 +57,10 @@ export const analysisSessionsTable = pgTable(
     index("analysis_sessions_stale_contract_fixture_idx")
       .on(table.createdAt, table.runId)
       .where(
-        sql`${table.provenance} = 'CONTRACT_TEST' AND ${table.runId} IS NOT NULL`,
+        sql`${table.provenance} = 'CONTRACT_TEST' AND ${table.runId} !~ '^[[:space:]]*$'`,
       ),
     check(
-      "analysis_sessions_ownership_check",
+      "analysis_sessions_ownership_nonwhitespace_run_id_required_check",
       sql.raw(ownershipCheckSql),
     ),
   ],

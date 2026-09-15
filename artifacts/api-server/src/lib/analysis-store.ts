@@ -61,7 +61,9 @@ function isValidOwnership(
   const rule = ANALYSIS_SESSION_OWNERSHIP_RULES.find(
     (candidate) => candidate.provenance === provenance,
   );
-  return rule !== undefined && rule.requiresRunId === Boolean(runId);
+  const hasNonBlankRunId =
+    typeof runId === "string" && runId.trim().length > 0;
+  return rule !== undefined && rule.requiresRunId === hasNonBlankRunId;
 }
 
 function rowToSession(row: typeof analysisSessionsTable.$inferSelect): AnalysisSession {

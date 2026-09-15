@@ -54,7 +54,12 @@ def _seed() -> None:
 
 
 def _valid_ownership(provenance: str, run_id: str | None) -> bool:
-    return (provenance == USER_PROVENANCE and not run_id) or (provenance == CONTRACT_TEST_PROVENANCE and bool(run_id))
+    has_nonblank_run_id = isinstance(run_id, str) and bool(run_id.strip())
+    return (
+        provenance == USER_PROVENANCE and run_id is None
+    ) or (
+        provenance == CONTRACT_TEST_PROVENANCE and has_nonblank_run_id
+    )
 
 
 def _write(session: dict, expected: int) -> dict:

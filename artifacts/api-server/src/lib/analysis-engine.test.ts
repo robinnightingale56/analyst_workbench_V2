@@ -947,6 +947,19 @@ test("API rejects every ownership rule with inconsistent run metadata", async ()
   }
 });
 
+test("API rejects blank contract-test run IDs", async () => {
+  for (const runId of ["", " \t\n "]) {
+    await assert.rejects(
+      createSession({
+        prompt: "Reject blank contract run metadata",
+        provenance: CONTRACT_TEST_PROVENANCE,
+        runId,
+      }),
+      /provenance and runId are inconsistent/,
+    );
+  }
+});
+
 test("database rejects every ownership rule with inconsistent run metadata", async () => {
   const data = {
     id: "invalid-ownership",
@@ -962,7 +975,9 @@ test("database rejects every ownership rule with inconsistent run metadata", asy
   const isOwnershipConstraintError = (error: unknown) =>
     error instanceof Error &&
     error.cause instanceof Error &&
-    /analysis_sessions_ownership_check/.test(error.cause.message);
+    /analysis_sessions_ownership_nonwhitespace_run_id_required_check/.test(
+      error.cause.message,
+    );
 
   for (const rule of ANALYSIS_SESSION_OWNERSHIP_RULES) {
     await assert.rejects(
@@ -973,6 +988,30 @@ test("database rejects every ownership rule with inconsistent run metadata", asy
         runId: rule.requiresRunId ? undefined : testRunId,
       }),
       isOwnershipConstraintError,
+    );
+  }
+});
+
+test("database rejects blank contract-test run IDs", async () => {
+  const data = {
+    id: "blank-contract-run-id",
+    prompt: "Reject blank contract run metadata",
+    analyst: "Test Analyst",
+    classification: "UNCLASSIFIED",
+    status: "DRAFT",
+    createdAt: new Date().toISOString(),
+    sourceFiles: [],
+    sourceNotices: [],
+    assessment: null,
+  };
+  for (const runId of ["", " \t\n "]) {
+    await assert.rejects(
+      db.insert(analysisSessionsTable).values({
+        id: crypto.randomUUID(),
+        data,
+        provenance: CONTRACT_TEST_PROVENANCE,
+        runId,
+      }),
     );
   }
 });

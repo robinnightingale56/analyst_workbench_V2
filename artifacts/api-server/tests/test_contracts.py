@@ -2,6 +2,8 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 from fastapi.testclient import TestClient
+import pytest
+from sqlalchemy.exc import IntegrityError
 
 # Keep contract tests self-contained; production uses DATABASE_URL and the
 # PostgreSQL-compatible table below unchanged.
@@ -13,10 +15,12 @@ os.environ["API_DATABASE_URL"] = f"sqlite:///{_db_file}"
 from api_server.engine import build_count_answer  # noqa: E402
 from api_server.store import (  # noqa: E402
     AnalysisVersionConflictError,
+    CONTRACT_TEST_PROVENANCE,
     _write,
     create_session,
     get_session,
 )
+from api_server.db import AnalysisSessionRow, SessionLocal, utcnow  # noqa: E402
 from api_server.main import app  # noqa: E402
 from api_server.models import Incident  # noqa: E402
 from api_server.store import list_sessions  # noqa: E402
@@ -109,6 +113,62 @@ def test_http_research_and_assessment_flow_returns_compatible_session():
         assert assessment["provisional"] is True
         assert assessment["countAnswer"]["answerStatus"] == "SUPPORTED"
         assert assessment["countAnswer"]["provisionalCount"] == 1
+
+
+@pytest.mark.parametrize("run_id", ["", " \t\n "])
+def test_api_rejects_blank_contract_test_run_ids(run_id):
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/analysis-sessions",
+            json={
+                "prompt": "Reject blank contract run metadata",
+                "provenance": CONTRACT_TEST_PROVENANCE,
+                "runId": run_id,
+            },
+        )
+    assert response.status_code == 400
+    assert "provenance and runId are inconsistent" in response.json()["error"]
+
+
+@pytest.mark.parametrize("run_id", ["", " \t\n "])
+def test_store_rejects_blank_contract_test_run_ids(run_id):
+    with pytest.raises(
+        ValueError,
+        match="provenance and runId are inconsistent",
+    ):
+        create_session(
+            "Reject blank contract run metadata",
+            provenance=CONTRACT_TEST_PROVENANCE,
+            run_id=run_id,
+        )
+
+
+@pytest.mark.parametrize("run_id", [None, "", " \t\n "])
+def test_database_rejects_contract_test_sessions_without_nonblank_run_id(run_id):
+    now = utcnow()
+    row = AnalysisSessionRow(
+        id=f"invalid-contract-run-{repr(run_id)}",
+        data={"prompt": "Reject invalid contract run metadata"},
+        provenance=CONTRACT_TEST_PROVENANCE,
+        run_id=run_id,
+        version=1,
+        created_at=now,
+        updated_at=now,
+    )
+    with pytest.raises(IntegrityError):
+        with SessionLocal.begin() as db:
+            db.add(row)
+
+
+def test_store_accepts_valid_ownership_metadata():
+    analyst_session = create_session("Accept analyst ownership metadata")
+    contract_session = create_session(
+        "Accept contract ownership metadata",
+        provenance=CONTRACT_TEST_PROVENANCE,
+        run_id="contract-run",
+    )
+    assert analyst_session["id"]
+    assert contract_session["id"]
 
 
 def test_session_listing_survives_cleanup_failure():
