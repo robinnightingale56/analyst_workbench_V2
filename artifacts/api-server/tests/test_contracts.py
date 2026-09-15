@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from unittest.mock import patch
-from fastapi.testclient import TestClient
+import httpx
 import pytest
 from sqlalchemy.exc import IntegrityError
 
@@ -24,6 +24,17 @@ from api_server.db import AnalysisSessionRow, SessionLocal, utcnow  # noqa: E402
 from api_server.main import app  # noqa: E402
 from api_server.models import Incident  # noqa: E402
 from api_server.store import list_sessions  # noqa: E402
+
+
+@pytest.fixture
+async def client():
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as async_client:
+            yield async_client
 
 
 def _source(source_id: str, content: str) -> dict:
@@ -83,79 +94,79 @@ def test_optimistic_version_compare_and_swap_rejects_stale_writer():
     assert saved["version"] == current["version"] + 1
 
 
-def test_http_research_and_assessment_flow_returns_compatible_session():
-    with TestClient(app) as client:
-        created = client.post(
-            "/api/analysis-sessions",
-            json={
-                "prompt": "How many times did Country Alpha and Country Beta clash in 2026?",
-                "classification": "UNCLASSIFIED",
-            },
-        )
-        assert created.status_code == 201
-        session = created.json()
+@pytest.mark.asyncio
+async def test_http_research_and_assessment_flow_returns_compatible_session(client):
+    created = await client.post(
+        "/api/analysis-sessions",
+        json={
+            "prompt": "How many times did Country Alpha and Country Beta clash in 2026?",
+            "classification": "UNCLASSIFIED",
+        },
+    )
+    assert created.status_code == 201
+    session = created.json()
 
-        researched = client.post(
-            f"/api/analysis-sessions/{session['id']}/research",
-            json={"sourceConnectorIds": ["demonstration-library"], "maxResults": 4},
-        )
-        assert researched.status_code == 200
-        researched_session = researched.json()
-        assert researched_session["status"] == "READY_FOR_SELECTION"
-        source_ids = [source["id"] for source in researched_session["sourceFiles"]]
+    researched = await client.post(
+        f"/api/analysis-sessions/{session['id']}/research",
+        json={"sourceConnectorIds": ["demonstration-library"], "maxResults": 4},
+    )
+    assert researched.status_code == 200
+    researched_session = researched.json()
+    assert researched_session["status"] == "READY_FOR_SELECTION"
+    source_ids = [source["id"] for source in researched_session["sourceFiles"]]
 
-        assessed = client.post(
-            f"/api/analysis-sessions/{session['id']}/assessment",
-            json={"selectedSourceFileIds": source_ids},
-        )
-        assert assessed.status_code == 200
-        assessment = assessed.json()["assessment"]
-        assert assessment["provisional"] is True
-        assert assessment["countAnswer"]["answerStatus"] == "SUPPORTED"
-        assert assessment["countAnswer"]["provisionalCount"] == 1
+    assessed = await client.post(
+        f"/api/analysis-sessions/{session['id']}/assessment",
+        json={"selectedSourceFileIds": source_ids},
+    )
+    assert assessed.status_code == 200
+    assessment = assessed.json()["assessment"]
+    assert assessment["provisional"] is True
+    assert assessment["countAnswer"]["answerStatus"] == "SUPPORTED"
+    assert assessment["countAnswer"]["provisionalCount"] == 1
 
-        assessed_session = assessed.json()
-        incidents = assessment["countAnswer"]["incidents"]
-        without_spans = [
-            {key: value for key, value in incident.items() if key != "evidenceSpans"}
-            for incident in incidents
-        ]
-        rejected = client.patch(
-            f"/api/analysis-sessions/{session['id']}/assessment",
-            json={
-                "expectedVersion": assessed_session["version"],
-                "finalized": True,
-                "incidents": without_spans,
-            },
-        )
-        assert rejected.status_code == 400
-        assert rejected.json() == {
-            "error": "Every included incident requires an exact evidence span for each citation"
-        }
+    assessed_session = assessed.json()
+    incidents = assessment["countAnswer"]["incidents"]
+    without_spans = [
+        {key: value for key, value in incident.items() if key != "evidenceSpans"}
+        for incident in incidents
+    ]
+    rejected = await client.patch(
+        f"/api/analysis-sessions/{session['id']}/assessment",
+        json={
+            "expectedVersion": assessed_session["version"],
+            "finalized": True,
+            "incidents": without_spans,
+        },
+    )
+    assert rejected.status_code == 400
+    assert rejected.json() == {
+        "error": "Every included incident requires an exact evidence span for each citation"
+    }
 
-        finalized = client.patch(
-            f"/api/analysis-sessions/{session['id']}/assessment",
-            json={
-                "expectedVersion": assessed_session["version"],
-                "finalized": True,
-                "incidents": incidents,
-            },
-        )
-        assert finalized.status_code == 200
-        assert finalized.json()["assessment"]["countAnswer"]["finalized"] is True
+    finalized = await client.patch(
+        f"/api/analysis-sessions/{session['id']}/assessment",
+        json={
+            "expectedVersion": assessed_session["version"],
+            "finalized": True,
+            "incidents": incidents,
+        },
+    )
+    assert finalized.status_code == 200
+    assert finalized.json()["assessment"]["countAnswer"]["finalized"] is True
 
 
 @pytest.mark.parametrize("run_id", ["", " \t\n "])
-def test_api_rejects_blank_contract_test_run_ids(run_id):
-    with TestClient(app) as client:
-        response = client.post(
-            "/api/analysis-sessions",
-            json={
-                "prompt": "Reject blank contract run metadata",
-                "provenance": CONTRACT_TEST_PROVENANCE,
-                "runId": run_id,
-            },
-        )
+@pytest.mark.asyncio
+async def test_api_rejects_blank_contract_test_run_ids(run_id, client):
+    response = await client.post(
+        "/api/analysis-sessions",
+        json={
+            "prompt": "Reject blank contract run metadata",
+            "provenance": CONTRACT_TEST_PROVENANCE,
+            "runId": run_id,
+        },
+    )
     assert response.status_code == 400
     assert "provenance and runId are inconsistent" in response.json()["error"]
 
