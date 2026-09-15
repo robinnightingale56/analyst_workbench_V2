@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 import { mockupPreviewPlugin } from "./mockupPreviewPlugin";
+import { createVitePortConfig } from "../../vite-port-config";
 
 export async function createViteConfig(
   env: NodeJS.ProcessEnv,
@@ -17,14 +18,7 @@ export async function createViteConfig(
     );
   }
 
-  const port = rawPort === undefined ? undefined : Number(rawPort);
-
-  if (
-    port !== undefined &&
-    (!Number.isInteger(port) || port <= 0 || port > 65_535)
-  ) {
-    throw new Error(`Invalid PORT value: "${rawPort}"`);
-  }
+  const portConfig = createVitePortConfig(rawPort);
 
   const basePath =
     env.BASE_PATH ?? (command === "build" ? "/__mockup/" : undefined);
@@ -64,7 +58,7 @@ export async function createViteConfig(
       emptyOutDir: true,
     },
     server: {
-      ...(port === undefined ? {} : { port, strictPort: true }),
+      ...portConfig,
       host: "0.0.0.0",
       allowedHosts: true,
       fs: {
@@ -72,7 +66,7 @@ export async function createViteConfig(
       },
     },
     preview: {
-      ...(port === undefined ? {} : { port, strictPort: true }),
+      ...portConfig,
       host: "0.0.0.0",
       allowedHosts: true,
     },

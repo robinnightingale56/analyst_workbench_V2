@@ -36,6 +36,8 @@ describe('Vite port configuration', () => {
 
     expect(config.server).not.toHaveProperty('port');
     expect(config.preview).not.toHaveProperty('port');
+    expect(config.server.strictPort).toBe(true);
+    expect(config.preview.strictPort).toBe(true);
   });
 
   it('uses a valid PORT for development and preview', async () => {

@@ -5,18 +5,13 @@ import { defineConfig } from 'vite';
 
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
 
+import { createVitePortConfig } from '../../vite-port-config';
+
 export async function createViteConfig(env: NodeJS.ProcessEnv) {
-  const rawPort = env.PORT;
-  const port = rawPort === undefined ? undefined : Number(rawPort);
-
-  if (
-    port !== undefined &&
-    (!Number.isInteger(port) || port <= 0 || port > 65_535)
-  ) {
-    throw new Error(`Invalid PORT value: "${rawPort}"`);
-  }
-
   const basePath = env.BASE_PATH ?? '/';
+  const portConfig = createVitePortConfig(env.PORT, {
+    strictPortWhenUnset: true,
+  });
 
   return {
     base: basePath,
@@ -55,8 +50,7 @@ export async function createViteConfig(env: NodeJS.ProcessEnv) {
       emptyOutDir: true,
     },
     server: {
-      ...(port === undefined ? {} : { port }),
-      strictPort: true,
+      ...portConfig,
       host: '0.0.0.0',
       allowedHosts: true,
       fs: {
@@ -64,8 +58,7 @@ export async function createViteConfig(env: NodeJS.ProcessEnv) {
       },
     },
     preview: {
-      ...(port === undefined ? {} : { port }),
-      strictPort: true,
+      ...portConfig,
       host: '0.0.0.0',
       allowedHosts: true,
     },
