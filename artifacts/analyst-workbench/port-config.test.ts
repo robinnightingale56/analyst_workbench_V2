@@ -34,6 +34,20 @@ describe('Vite port configuration', () => {
   it('leaves development and preview ports unset when PORT is omitted', async () => {
     const config = await createViteConfig(productionEnv);
 
+    expect(config.base).toBe('/');
+    expect(config.server).not.toHaveProperty('port');
+    expect(config.preview).not.toHaveProperty('port');
+    expect(config.server.strictPort).toBe(true);
+    expect(config.preview.strictPort).toBe(true);
+  });
+
+  it('honors an explicit BASE_PATH without changing missing-PORT behavior', async () => {
+    const config = await createViteConfig({
+      ...productionEnv,
+      BASE_PATH: '/analyst/',
+    });
+
+    expect(config.base).toBe('/analyst/');
     expect(config.server).not.toHaveProperty('port');
     expect(config.preview).not.toHaveProperty('port');
     expect(config.server.strictPort).toBe(true);
