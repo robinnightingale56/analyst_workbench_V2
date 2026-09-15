@@ -1,6 +1,7 @@
 import { analysisSessionsTable, db } from "@workspace/db";
 import { and, desc, eq, isNotNull, isNull, lt } from "drizzle-orm";
 import { assessSources } from "./analysis-engine";
+import { logger } from "./logger";
 import {
   generateDemonstrationFiles,
   runOpenSourceResearch,
@@ -110,11 +111,11 @@ async function writeSession(
   return rowToSession(row);
 }
 
-async function purgeExpiredArchivedSessions(now = new Date()) {
+export async function purgeExpiredArchivedSessions(now = new Date()) {
   const cutoff = new Date(
     now.getTime() - archivedSessionRetentionDays * 24 * 60 * 60 * 1000,
   );
-  await db
+  const deleted = await db
     .delete(analysisSessionsTable)
     .where(
       and(
@@ -122,12 +123,21 @@ async function purgeExpiredArchivedSessions(now = new Date()) {
         lt(analysisSessionsTable.archivedAt, cutoff),
         isNull(analysisSessionsTable.finalizedAt),
       ),
-    );
+    )
+    .returning({ id: analysisSessionsTable.id });
+  return deleted.length;
 }
 
 export async function listSessions(includeArchived = false) {
   await ensureDemonstrationSession();
-  await purgeExpiredArchivedSessions();
+  try {
+    await purgeExpiredArchivedSessions();
+  } catch (err) {
+    logger.error(
+      { err },
+      "Failed to purge expired archived analysis sessions during list fallback",
+    );
+  }
   const rows = await db
     .select()
     .from(analysisSessionsTable)

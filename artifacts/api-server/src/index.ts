@@ -1,7 +1,9 @@
 import app from "./app";
+import { purgeExpiredArchivedSessions } from "./lib/analysis-store";
 import { logger } from "./lib/logger";
 
 const rawPort = process.env["PORT"];
+const archivedSessionCleanupIntervalMs = 6 * 60 * 60 * 1000;
 
 if (!rawPort) {
   throw new Error(
@@ -22,4 +24,28 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+
+  const runArchivedSessionCleanup = async () => {
+    try {
+      const deletedCount = await purgeExpiredArchivedSessions();
+      if (deletedCount > 0) {
+        logger.info(
+          { deletedCount },
+          "Purged expired archived analysis sessions",
+        );
+      }
+    } catch (cleanupError) {
+      logger.error(
+        { err: cleanupError },
+        "Failed to purge expired archived analysis sessions",
+      );
+    }
+  };
+
+  void runArchivedSessionCleanup();
+  const cleanupTimer = setInterval(
+    runArchivedSessionCleanup,
+    archivedSessionCleanupIntervalMs,
+  );
+  cleanupTimer.unref();
 });

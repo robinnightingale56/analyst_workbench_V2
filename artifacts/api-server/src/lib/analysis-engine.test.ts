@@ -5,7 +5,12 @@ import { analysisSessionsTable, db } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import app from "../app";
 import { buildCountAnswer, deduplicateIncidents, incidentCitationError, type Incident } from "./analysis-engine";
-import { createSession, getSession, setSessionSources } from "./analysis-store";
+import {
+  createSession,
+  getSession,
+  purgeExpiredArchivedSessions,
+  setSessionSources,
+} from "./analysis-store";
 import { parseBingNewsRss } from "./source-adapters";
 
 function source(id: string, content: string, publishedAt = "2026-09-14T12:00:00Z") {
@@ -675,15 +680,29 @@ test("finalized reviews cannot be archived", async () => {
 });
 
 test("retention removes only expired archived non-finalized sessions", async () => {
-  await withApi(async (baseUrl) => {
-    const session = await createSession({ prompt: "Expire this archived test session" });
-    const expiredAt = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
-    await db
-      .update(analysisSessionsTable)
-      .set({ archivedAt: expiredAt })
-      .where(eq(analysisSessionsTable.id, session.id));
-
-    await requestJson(baseUrl, "/analysis-sessions");
-    assert.equal(await getSession(session.id), undefined);
+  const expiredDraft = await createSession({
+    prompt: "Expire this archived test session",
   });
+  const expiredFinalized = await createSession({
+    prompt: "Retain this finalized archived test session",
+  });
+  const expiredAt = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+  await db
+    .update(analysisSessionsTable)
+    .set({ archivedAt: expiredAt })
+    .where(eq(analysisSessionsTable.id, expiredDraft.id));
+  await db
+    .update(analysisSessionsTable)
+    .set({ archivedAt: expiredAt, finalizedAt: expiredAt })
+    .where(eq(analysisSessionsTable.id, expiredFinalized.id));
+
+  const deletedCount = await purgeExpiredArchivedSessions();
+
+  assert.equal(deletedCount, 1);
+  assert.equal(await getSession(expiredDraft.id), undefined);
+  assert.notEqual(await getSession(expiredFinalized.id), undefined);
+
+  await db
+    .delete(analysisSessionsTable)
+    .where(eq(analysisSessionsTable.id, expiredFinalized.id));
 });
