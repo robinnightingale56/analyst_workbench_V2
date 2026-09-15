@@ -147,6 +147,18 @@ export async function purgeExpiredArchivedSessions(now = new Date()) {
   return deleted.length;
 }
 
+export function staleContractFixturePredicate(
+  activeRunId: string,
+  cutoff: Date,
+) {
+  return and(
+    eq(analysisSessionsTable.provenance, CONTRACT_TEST_PROVENANCE),
+    isNotNull(analysisSessionsTable.runId),
+    ne(analysisSessionsTable.runId, activeRunId),
+    lt(analysisSessionsTable.createdAt, cutoff),
+  );
+}
+
 export async function purgeStaleContractFixtures(
   activeRunId: string,
   now = new Date(),
@@ -155,14 +167,7 @@ export async function purgeStaleContractFixtures(
   const cutoff = new Date(now.getTime() - staleAfterMs);
   const deleted = await db
     .delete(analysisSessionsTable)
-    .where(
-      and(
-        eq(analysisSessionsTable.provenance, CONTRACT_TEST_PROVENANCE),
-        isNotNull(analysisSessionsTable.runId),
-        ne(analysisSessionsTable.runId, activeRunId),
-        lt(analysisSessionsTable.createdAt, cutoff),
-      ),
-    )
+    .where(staleContractFixturePredicate(activeRunId, cutoff))
     .returning({ id: analysisSessionsTable.id });
   return deleted.length;
 }

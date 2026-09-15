@@ -7,7 +7,7 @@ import {
   db,
   USER_PROVENANCE,
 } from "@workspace/db";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import app from "../app";
 import { buildCountAnswer, deduplicateIncidents, incidentCitationError, type Incident } from "./analysis-engine";
 import {
@@ -18,6 +18,7 @@ import {
   purgeExpiredArchivedSessions,
   purgeStaleContractFixtures,
   setSessionSources,
+  staleContractFixturePredicate,
 } from "./analysis-store";
 import { getArchivedSessionSettings } from "./archived-session-settings";
 import { parseBingNewsRss } from "./source-adapters";
@@ -988,4 +989,49 @@ test("stale fixture sweep preserves active runs and analyst-created sessions", a
   assert.equal(await getSession(staleFixture.id), undefined);
   assert.notEqual(await getSession(activeFixture.id), undefined);
   assert.notEqual(await getSession(analystSession.id), undefined);
+});
+
+test("stale fixture deletion predicate uses its partial index with shared history present", async () => {
+  const staleFixture = await createSession({
+    prompt: "Plan stale contract fixture deletion",
+    provenance: CONTRACT_TEST_PROVENANCE,
+    runId: "stale-plan-run",
+  });
+  const activeFixture = await createTestSession({
+    prompt: "Keep active fixture out of the stale deletion plan",
+  });
+  const analystSession = await createSession({
+    prompt: "Keep analyst history out of the stale deletion plan",
+  });
+  testSessionIds.add(staleFixture.id);
+  testSessionIds.add(analystSession.id);
+
+  const cutoff = new Date("2026-09-15T11:00:00.000Z");
+  await db
+    .update(analysisSessionsTable)
+    .set({ createdAt: new Date("2026-09-15T08:00:00.000Z") })
+    .where(
+      inArray(analysisSessionsTable.id, [
+        staleFixture.id,
+        activeFixture.id,
+        analystSession.id,
+      ]),
+    );
+
+  const plan = await db.transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL enable_seqscan = off`);
+    return tx.execute(sql`
+      EXPLAIN DELETE FROM ${analysisSessionsTable}
+      WHERE ${staleContractFixturePredicate(testRunId, cutoff)}
+    `);
+  });
+  const planText = plan.rows
+    .map((row) => String((row as Record<string, unknown>)["QUERY PLAN"]))
+    .join("\n");
+
+  assert.match(
+    planText,
+    /analysis_sessions_stale_contract_fixture_idx/,
+    `Expected stale fixture deletion to use analysis_sessions_stale_contract_fixture_idx.\n${planText}`,
+  );
 });
