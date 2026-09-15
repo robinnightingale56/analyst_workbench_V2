@@ -8,6 +8,7 @@
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "test:incident-review-evidence-contract": "pnpm run typecheck:libs && pnpm --filter @workspace/scripts exec tsx validation/incident-review-evidence-contract.test.ts",
     "test:canvas-publish-contract": "node scripts/validation/canvas-publish-contract.test.mjs",
+    "test:shared-port-utils": "pnpm --filter @workspace/test-utils test",
     "test:stale-api-declarations": "node scripts/validation/stale-api-declarations.mjs && node scripts/validation/stale-api-declarations-failure.test.mjs",
     "test:web-port-contracts": "analyst_status=0; canvas_status=0; echo 'Analyst Workbench port contract:'; pnpm --filter @workspace/analyst-workbench run test:port || analyst_status=$?; echo 'Canvas port contract:'; pnpm --filter @workspace/mockup-sandbox run validate:port || canvas_status=$?; if [ \"$analyst_status\" -ne 0 ] || [ \"$canvas_status\" -ne 0 ]; then echo \"Web port contract validation failed (Analyst Workbench: $analyst_status; Canvas: $canvas_status).\" >&2; exit 1; fi",
     "typecheck:libs": "tsc --build --force",
