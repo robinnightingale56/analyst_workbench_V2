@@ -23,6 +23,7 @@ import type {
   AnalysisSession,
   AnalysisSessionArchiveUpdate,
   AnalysisSessionInput,
+  AnalysisStarters,
   AssessmentInput,
   ErrorResponse,
   EvaluationVectorDefinition,
@@ -477,6 +478,84 @@ export const useUpdateAnalysisSessionArchive = <TError = ErrorType<ErrorResponse
       > => {
       return useMutation(getUpdateAnalysisSessionArchiveMutationOptions(options));
     }
+
+export const getListAnalysisStartersUrl = () => {
+
+
+
+
+  return `/api/analysis-starters`
+}
+
+/**
+ * Recent questions and dated public-source leads from the analyst's own prior research; this is not a current-events feed.
+ * @summary List the authenticated analyst's question starters
+ */
+export const listAnalysisStarters = async ( options?: Parameters<typeof customFetch>[1]): Promise<AnalysisStarters> => {
+
+  return customFetch<AnalysisStarters>(getListAnalysisStartersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAnalysisStartersQueryKey = () => {
+    return [
+    `/api/analysis-starters`
+    ] as const;
+    }
+
+
+export const getListAnalysisStartersQueryOptions = <TData = Awaited<ReturnType<typeof listAnalysisStarters>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAnalysisStarters>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAnalysisStartersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAnalysisStarters>>> = ({ signal }) => listAnalysisStarters({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAnalysisStarters>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAnalysisStartersQueryResult = NonNullable<Awaited<ReturnType<typeof listAnalysisStarters>>>
+export type ListAnalysisStartersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List the authenticated analyst's question starters
+ */
+
+export function useListAnalysisStarters<TData = Awaited<ReturnType<typeof listAnalysisStarters>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAnalysisStarters>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAnalysisStartersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getRunResearchUrl = (sessionId: string,) => {
 

@@ -19,6 +19,7 @@ export interface AnalysisSession {
   createdAt: string;
   sourceFiles: SourceFile[];
   sourceNotices: string[];
+  sourceConnectorIds: string[];
   assessment: Assessment | null;
   /** @minimum 1 */
   version: number;

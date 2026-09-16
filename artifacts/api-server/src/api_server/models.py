@@ -27,6 +27,8 @@ class SourceFile(BaseModel):
     source: str
     sourceType: Literal["NEWS", "GOVERNMENT", "ACADEMIC", "SOCIAL", "WEB", "INTERNAL"]
     publishedAt: str
+    providerPublishedAt: str | None = None
+    publicationDateSource: Literal["PROVIDER", "RETRIEVAL_FALLBACK", "SYNTHETIC", "UNKNOWN"] = "UNKNOWN"
     relevance: float = Field(ge=0, le=1)
     reliability: Literal["HIGH", "MODERATE", "LOW", "UNKNOWN"]
     bluf: str
@@ -74,6 +76,7 @@ class AnalysisSession(BaseModel):
     createdAt: str
     sourceFiles: list[SourceFile]
     sourceNotices: list[str]
+    sourceConnectorIds: list[str] = Field(default_factory=list)
     assessment: dict[str, Any] | None
     version: int = Field(ge=1)
     updatedAt: str
@@ -105,3 +108,25 @@ class IncidentReview(BaseModel):
     expectedVersion: int = Field(ge=1)
     finalized: bool
     incidents: list[Incident]
+
+
+class RecentQuestionStarter(BaseModel):
+    sessionId: str
+    prompt: str
+    classification: Classification
+    updatedAt: str
+
+
+class OngoingEventStarter(BaseModel):
+    sessionId: str
+    title: str
+    question: str
+    sourceTitle: str
+    sourceUrl: str
+    publishedAt: str
+    retrievedAt: str
+
+
+class AnalysisStarters(BaseModel):
+    recentQuestions: list[RecentQuestionStarter]
+    ongoingEvents: list[OngoingEventStarter]

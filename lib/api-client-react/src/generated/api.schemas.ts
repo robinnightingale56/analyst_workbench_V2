@@ -137,6 +137,16 @@ export const SourceFileSourceType = {
   INTERNAL: 'INTERNAL',
 } as const;
 
+export type SourceFilePublicationDateSource = typeof SourceFilePublicationDateSource[keyof typeof SourceFilePublicationDateSource];
+
+
+export const SourceFilePublicationDateSource = {
+  PROVIDER: 'PROVIDER',
+  RETRIEVAL_FALLBACK: 'RETRIEVAL_FALLBACK',
+  SYNTHETIC: 'SYNTHETIC',
+  UNKNOWN: 'UNKNOWN',
+} as const;
+
 export type SourceFileReliability = typeof SourceFileReliability[keyof typeof SourceFileReliability];
 
 
@@ -162,6 +172,12 @@ export interface SourceFile {
   source: string;
   sourceType: SourceFileSourceType;
   publishedAt: string;
+  /**
+     * Authentic publication timestamp parsed from the provider, if available.
+     * @nullable
+     */
+  providerPublishedAt: string | null;
+  publicationDateSource: SourceFilePublicationDateSource;
   /**
      * @minimum 0
      * @maximum 1
@@ -391,12 +407,45 @@ export interface AnalysisSession {
   createdAt: string;
   sourceFiles: SourceFile[];
   sourceNotices: string[];
+  sourceConnectorIds: string[];
   assessment: Assessment | null;
   /** @minimum 1 */
   version: number;
   updatedAt: string;
   /** @nullable */
   archivedAt: string | null;
+}
+
+export type RecentQuestionStarterClassification = typeof RecentQuestionStarterClassification[keyof typeof RecentQuestionStarterClassification];
+
+
+export const RecentQuestionStarterClassification = {
+  UNCLASSIFIED: 'UNCLASSIFIED',
+  CUI: 'CUI',
+  SECRET: 'SECRET',
+  TS: 'TS',
+} as const;
+
+export interface RecentQuestionStarter {
+  sessionId: string;
+  prompt: string;
+  classification: RecentQuestionStarterClassification;
+  updatedAt: string;
+}
+
+export interface OngoingEventStarter {
+  sessionId: string;
+  title: string;
+  question: string;
+  sourceTitle: string;
+  sourceUrl: string;
+  publishedAt: string;
+  retrievedAt: string;
+}
+
+export interface AnalysisStarters {
+  recentQuestions: RecentQuestionStarter[];
+  ongoingEvents: OngoingEventStarter[];
 }
 
 export type SourceConnectorStatus = typeof SourceConnectorStatus[keyof typeof SourceConnectorStatus];

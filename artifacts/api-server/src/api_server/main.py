@@ -12,11 +12,11 @@ import httpx
 from .auth import require_trusted_origin, require_user, trusted_origins
 from .config import get_settings
 from .engine import EVALUATION_VECTORS, HISTORICAL_RATINGS, deduplicate_incidents, incident_citation_error
-from .models import ArchiveUpdate, AssessmentInput, CreateSession, IncidentReview, ResearchRun
+from .models import AnalysisStarters, ArchiveUpdate, AssessmentInput, CreateSession, IncidentReview, ResearchRun
 from .sources import SOURCE_CONNECTORS, is_known_connector
 from .store import (
     AnalysisVersionConflictError, FinalizedAnalysisArchiveError, assess_session,
-    create_session, get_session, list_sessions, purge_expired_archived_sessions,
+    create_session, get_session, list_analysis_starters, list_sessions, purge_expired_archived_sessions,
     run_research, set_archived, update_review,
 )
 
@@ -195,6 +195,11 @@ async def post_analysis_session(
         return _error(str(exc), 400)
 
 
+@app.get("/api/analysis-starters", response_model=AnalysisStarters)
+async def get_analysis_starters(user_id: str = Depends(require_user)):
+    return list_analysis_starters(owner_id=user_id)
+
+
 @app.get("/api/analysis-sessions/{sessionId}")
 async def get_analysis_session(sessionId: str, user_id: str = Depends(require_user)):
     session = get_session(sessionId, owner_id=user_id)
@@ -228,7 +233,12 @@ async def post_research(
     if not existing:
         return _error("Analysis session not found", 404)
     if existing["classification"] != "UNCLASSIFIED":
-        return _error("Public web research is permitted only for UNCLASSIFIED sessions", 403)
+        live_connector_ids = {
+            connector["id"] for connector in SOURCE_CONNECTORS
+            if connector["mode"] == "LIVE"
+        }
+        if any(connector_id in live_connector_ids for connector_id in body.sourceConnectorIds):
+            return _error("Public web research is permitted only for UNCLASSIFIED sessions", 403)
     if any(not is_known_connector(x) for x in body.sourceConnectorIds):
         return _error("One or more source connectors are not supported", 400)
     try:

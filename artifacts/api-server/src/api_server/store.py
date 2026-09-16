@@ -54,6 +54,7 @@ def _seed() -> None:
             "analyst": "Demo Analyst", "classification": "UNCLASSIFIED", "status": "READY_FOR_SELECTION",
             "createdAt": _iso(now), "sourceFiles": demonstration_files("operating environment implications"),
             "sourceNotices": ["This saved training session contains synthetic demonstration records."],
+            "sourceConnectorIds": ["demonstration-library"],
             "assessment": None,
         }
         # Demonstration data predates user ownership and remains deliberately
@@ -126,6 +127,78 @@ def list_sessions(include_archived: bool = False, owner_id: str | None = None) -
         return [_session(row) for row in db.scalars(query)]
 
 
+def _is_live_source(source: dict) -> bool:
+    tags = {str(tag).lower() for tag in source.get("tags", [])}
+    method = str(source.get("collectionMethod", "")).lower()
+    return (
+        "live" in tags
+        or "google news" in method
+        or "bing news" in method
+        or "federal register" in method
+        or "crossref" in method
+    )
+
+
+def _parse_iso_timestamp(value: object) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return value
+
+
+def list_analysis_starters(owner_id: str) -> dict:
+    """Return only the caller's saved questions and dated prior-research leads.
+
+    Leads are deliberately derived from prior user-owned retrieval. This avoids
+    implying that static templates or synthetic training records are current events.
+    """
+    sessions = list_sessions(owner_id=owner_id)
+    recent = [
+        {
+            "sessionId": session["id"],
+            "prompt": session["prompt"],
+            "classification": session["classification"],
+            "updatedAt": session["updatedAt"],
+        }
+        for session in sessions[:8]
+    ]
+    events: list[dict] = []
+    seen_urls: set[str] = set()
+    for session in sessions:
+        for source in session.get("sourceFiles", []):
+            url = source.get("url", "")
+            provider_published_at = _parse_iso_timestamp(source.get("providerPublishedAt"))
+            retrieved_at = _parse_iso_timestamp(source.get("retrievedAt"))
+            if (
+                len(events) >= 8
+                or not url
+                or url in seen_urls
+                or source.get("publicationDateSource") != "PROVIDER"
+                or not provider_published_at
+                or not retrieved_at
+                or not _is_live_source(source)
+            ):
+                continue
+            seen_urls.add(url)
+            title = str(source.get("title", "Dated source result"))
+            events.append({
+                "sessionId": session["id"],
+                "title": title,
+                "question": (
+                    f"What does the dated reporting “{title}” indicate for the decision need, "
+                    "and what information would change the provisional judgment?"
+                ),
+                "sourceTitle": str(source.get("source", "Source")),
+                "sourceUrl": url,
+                "publishedAt": provider_published_at,
+                "retrievedAt": retrieved_at,
+            })
+    return {"recentQuestions": recent, "ongoingEvents": events}
+
+
 def create_session(prompt: str, analyst: str | None = None, classification: str | None = None,
                    provenance: str | None = None, run_id: str | None = None,
                    owner_id: str | None = None) -> dict:
@@ -138,7 +211,7 @@ def create_session(prompt: str, analyst: str | None = None, classification: str 
     if provenance == CONTRACT_TEST_PROVENANCE and owner_id is not None:
         raise ValueError("Contract test analysis sessions cannot have a user owner")
     now = utcnow()
-    data = {"id": str(uuid4()), "prompt": prompt, "analyst": analyst or "Current Analyst", "classification": classification or "UNCLASSIFIED", "status": "DRAFT", "createdAt": _iso(now), "sourceFiles": [], "sourceNotices": [], "assessment": None}
+    data = {"id": str(uuid4()), "prompt": prompt, "analyst": analyst or "Current Analyst", "classification": classification or "UNCLASSIFIED", "status": "DRAFT", "createdAt": _iso(now), "sourceFiles": [], "sourceNotices": [], "sourceConnectorIds": [], "assessment": None}
     with SessionLocal.begin() as db:
         db.add(AnalysisSessionRow(id=data["id"], data=data, provenance=provenance, owner_id=owner_id, run_id=run_id, version=1, created_at=now, updated_at=now))
     return {**data, "version": 1, "updatedAt": _iso(now), "archivedAt": None}
@@ -180,7 +253,7 @@ async def run_research(session_id: str, connector_ids: list[str], max_results: i
     current = _write(session, session["version"], owner_id)
     try:
         files, notices = await research(current["prompt"], connector_ids, max_results or 12)
-        current.update(sourceFiles=files, sourceNotices=notices, status="READY_FOR_SELECTION" if files else "FAILED", assessment=None)
+        current.update(sourceFiles=files, sourceNotices=notices, sourceConnectorIds=connector_ids, status="READY_FOR_SELECTION" if files else "FAILED", assessment=None)
         return _write(current, current["version"], owner_id)
     except Exception as exc:
         current.update(status="FAILED", sourceNotices=[str(exc)])

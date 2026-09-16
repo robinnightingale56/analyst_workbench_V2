@@ -75,6 +75,8 @@ export const ListAnalysisSessionsResponseItem = zod.object({
   "source": zod.string(),
   "sourceType": zod.enum(['NEWS', 'GOVERNMENT', 'ACADEMIC', 'SOCIAL', 'WEB', 'INTERNAL']),
   "publishedAt": zod.string(),
+  "providerPublishedAt": zod.string().nullable().describe('Authentic publication timestamp parsed from the provider, if available.'),
+  "publicationDateSource": zod.enum(['PROVIDER', 'RETRIEVAL_FALLBACK', 'SYNTHETIC', 'UNKNOWN']),
   "relevance": zod.number().min(listAnalysisSessionsResponseSourceFilesItemRelevanceMin).max(listAnalysisSessionsResponseSourceFilesItemRelevanceMax),
   "reliability": zod.enum(['HIGH', 'MODERATE', 'LOW', 'UNKNOWN']),
   "bluf": zod.string(),
@@ -87,6 +89,7 @@ export const ListAnalysisSessionsResponseItem = zod.object({
   "contentDepth": zod.enum(['FULL_TEXT', 'EXCERPT', 'METADATA'])
 })),
   "sourceNotices": zod.array(zod.string()),
+  "sourceConnectorIds": zod.array(zod.string()),
   "assessment": zod.union([zod.object({
   "id": zod.string(),
   "selectedSourceFileIds": zod.array(zod.string()),
@@ -223,6 +226,8 @@ export const CreateAnalysisSessionResponse = zod.object({
   "source": zod.string(),
   "sourceType": zod.enum(['NEWS', 'GOVERNMENT', 'ACADEMIC', 'SOCIAL', 'WEB', 'INTERNAL']),
   "publishedAt": zod.string(),
+  "providerPublishedAt": zod.string().nullable().describe('Authentic publication timestamp parsed from the provider, if available.'),
+  "publicationDateSource": zod.enum(['PROVIDER', 'RETRIEVAL_FALLBACK', 'SYNTHETIC', 'UNKNOWN']),
   "relevance": zod.number().min(createAnalysisSessionResponseSourceFilesItemRelevanceMin).max(createAnalysisSessionResponseSourceFilesItemRelevanceMax),
   "reliability": zod.enum(['HIGH', 'MODERATE', 'LOW', 'UNKNOWN']),
   "bluf": zod.string(),
@@ -235,6 +240,7 @@ export const CreateAnalysisSessionResponse = zod.object({
   "contentDepth": zod.enum(['FULL_TEXT', 'EXCERPT', 'METADATA'])
 })),
   "sourceNotices": zod.array(zod.string()),
+  "sourceConnectorIds": zod.array(zod.string()),
   "assessment": zod.union([zod.object({
   "id": zod.string(),
   "selectedSourceFileIds": zod.array(zod.string()),
@@ -363,6 +369,8 @@ export const GetAnalysisSessionResponse = zod.object({
   "source": zod.string(),
   "sourceType": zod.enum(['NEWS', 'GOVERNMENT', 'ACADEMIC', 'SOCIAL', 'WEB', 'INTERNAL']),
   "publishedAt": zod.string(),
+  "providerPublishedAt": zod.string().nullable().describe('Authentic publication timestamp parsed from the provider, if available.'),
+  "publicationDateSource": zod.enum(['PROVIDER', 'RETRIEVAL_FALLBACK', 'SYNTHETIC', 'UNKNOWN']),
   "relevance": zod.number().min(getAnalysisSessionResponseSourceFilesItemRelevanceMin).max(getAnalysisSessionResponseSourceFilesItemRelevanceMax),
   "reliability": zod.enum(['HIGH', 'MODERATE', 'LOW', 'UNKNOWN']),
   "bluf": zod.string(),
@@ -375,6 +383,7 @@ export const GetAnalysisSessionResponse = zod.object({
   "contentDepth": zod.enum(['FULL_TEXT', 'EXCERPT', 'METADATA'])
 })),
   "sourceNotices": zod.array(zod.string()),
+  "sourceConnectorIds": zod.array(zod.string()),
   "assessment": zod.union([zod.object({
   "id": zod.string(),
   "selectedSourceFileIds": zod.array(zod.string()),
@@ -511,6 +520,8 @@ export const UpdateAnalysisSessionArchiveResponse = zod.object({
   "source": zod.string(),
   "sourceType": zod.enum(['NEWS', 'GOVERNMENT', 'ACADEMIC', 'SOCIAL', 'WEB', 'INTERNAL']),
   "publishedAt": zod.string(),
+  "providerPublishedAt": zod.string().nullable().describe('Authentic publication timestamp parsed from the provider, if available.'),
+  "publicationDateSource": zod.enum(['PROVIDER', 'RETRIEVAL_FALLBACK', 'SYNTHETIC', 'UNKNOWN']),
   "relevance": zod.number().min(updateAnalysisSessionArchiveResponseSourceFilesItemRelevanceMin).max(updateAnalysisSessionArchiveResponseSourceFilesItemRelevanceMax),
   "reliability": zod.enum(['HIGH', 'MODERATE', 'LOW', 'UNKNOWN']),
   "bluf": zod.string(),
@@ -523,6 +534,7 @@ export const UpdateAnalysisSessionArchiveResponse = zod.object({
   "contentDepth": zod.enum(['FULL_TEXT', 'EXCERPT', 'METADATA'])
 })),
   "sourceNotices": zod.array(zod.string()),
+  "sourceConnectorIds": zod.array(zod.string()),
   "assessment": zod.union([zod.object({
   "id": zod.string(),
   "selectedSourceFileIds": zod.array(zod.string()),
@@ -600,6 +612,29 @@ export const UpdateAnalysisSessionArchiveResponse = zod.object({
 
 
 /**
+ * Recent questions and dated public-source leads from the analyst's own prior research; this is not a current-events feed.
+ * @summary List the authenticated analyst's question starters
+ */
+export const ListAnalysisStartersResponse = zod.object({
+  "recentQuestions": zod.array(zod.object({
+  "sessionId": zod.string(),
+  "prompt": zod.string(),
+  "classification": zod.enum(['UNCLASSIFIED', 'CUI', 'SECRET', 'TS']),
+  "updatedAt": zod.string()
+})),
+  "ongoingEvents": zod.array(zod.object({
+  "sessionId": zod.string(),
+  "title": zod.string(),
+  "question": zod.string(),
+  "sourceTitle": zod.string(),
+  "sourceUrl": zod.string().url(),
+  "publishedAt": zod.string(),
+  "retrievedAt": zod.string()
+}))
+})
+
+
+/**
  * @summary Run research against selected source adapters
  */
 export const RunResearchParams = zod.object({
@@ -660,6 +695,8 @@ export const RunResearchResponse = zod.object({
   "source": zod.string(),
   "sourceType": zod.enum(['NEWS', 'GOVERNMENT', 'ACADEMIC', 'SOCIAL', 'WEB', 'INTERNAL']),
   "publishedAt": zod.string(),
+  "providerPublishedAt": zod.string().nullable().describe('Authentic publication timestamp parsed from the provider, if available.'),
+  "publicationDateSource": zod.enum(['PROVIDER', 'RETRIEVAL_FALLBACK', 'SYNTHETIC', 'UNKNOWN']),
   "relevance": zod.number().min(runResearchResponseSourceFilesItemRelevanceMin).max(runResearchResponseSourceFilesItemRelevanceMax),
   "reliability": zod.enum(['HIGH', 'MODERATE', 'LOW', 'UNKNOWN']),
   "bluf": zod.string(),
@@ -672,6 +709,7 @@ export const RunResearchResponse = zod.object({
   "contentDepth": zod.enum(['FULL_TEXT', 'EXCERPT', 'METADATA'])
 })),
   "sourceNotices": zod.array(zod.string()),
+  "sourceConnectorIds": zod.array(zod.string()),
   "assessment": zod.union([zod.object({
   "id": zod.string(),
   "selectedSourceFileIds": zod.array(zod.string()),
@@ -804,6 +842,8 @@ export const CreateAssessmentResponse = zod.object({
   "source": zod.string(),
   "sourceType": zod.enum(['NEWS', 'GOVERNMENT', 'ACADEMIC', 'SOCIAL', 'WEB', 'INTERNAL']),
   "publishedAt": zod.string(),
+  "providerPublishedAt": zod.string().nullable().describe('Authentic publication timestamp parsed from the provider, if available.'),
+  "publicationDateSource": zod.enum(['PROVIDER', 'RETRIEVAL_FALLBACK', 'SYNTHETIC', 'UNKNOWN']),
   "relevance": zod.number().min(createAssessmentResponseSourceFilesItemRelevanceMin).max(createAssessmentResponseSourceFilesItemRelevanceMax),
   "reliability": zod.enum(['HIGH', 'MODERATE', 'LOW', 'UNKNOWN']),
   "bluf": zod.string(),
@@ -816,6 +856,7 @@ export const CreateAssessmentResponse = zod.object({
   "contentDepth": zod.enum(['FULL_TEXT', 'EXCERPT', 'METADATA'])
 })),
   "sourceNotices": zod.array(zod.string()),
+  "sourceConnectorIds": zod.array(zod.string()),
   "assessment": zod.union([zod.object({
   "id": zod.string(),
   "selectedSourceFileIds": zod.array(zod.string()),
@@ -975,6 +1016,8 @@ export const UpdateIncidentReviewResponse = zod.object({
   "source": zod.string(),
   "sourceType": zod.enum(['NEWS', 'GOVERNMENT', 'ACADEMIC', 'SOCIAL', 'WEB', 'INTERNAL']),
   "publishedAt": zod.string(),
+  "providerPublishedAt": zod.string().nullable().describe('Authentic publication timestamp parsed from the provider, if available.'),
+  "publicationDateSource": zod.enum(['PROVIDER', 'RETRIEVAL_FALLBACK', 'SYNTHETIC', 'UNKNOWN']),
   "relevance": zod.number().min(updateIncidentReviewResponseSourceFilesItemRelevanceMin).max(updateIncidentReviewResponseSourceFilesItemRelevanceMax),
   "reliability": zod.enum(['HIGH', 'MODERATE', 'LOW', 'UNKNOWN']),
   "bluf": zod.string(),
@@ -987,6 +1030,7 @@ export const UpdateIncidentReviewResponse = zod.object({
   "contentDepth": zod.enum(['FULL_TEXT', 'EXCERPT', 'METADATA'])
 })),
   "sourceNotices": zod.array(zod.string()),
+  "sourceConnectorIds": zod.array(zod.string()),
   "assessment": zod.union([zod.object({
   "id": zod.string(),
   "selectedSourceFileIds": zod.array(zod.string()),

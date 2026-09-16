@@ -2,6 +2,7 @@ import os
 from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
+from uuid import uuid4
 import httpx
 import pytest
 from sqlalchemy.exc import IntegrityError
@@ -22,6 +23,7 @@ from api_server.store import (  # noqa: E402
     _write,
     create_session,
     get_session,
+    list_analysis_starters,
     purge_stale_contract_fixtures,
 )
 from api_server.db import AnalysisSessionRow, SessionLocal, init_db, utcnow  # noqa: E402
@@ -108,6 +110,60 @@ def test_optimistic_version_compare_and_swap_rejects_stale_writer():
     assert saved["version"] == current["version"] + 1
 
 
+def test_starters_are_owner_scoped_and_exclude_synthetic_records():
+    # Use unique principals so a previous interrupted local suite cannot leak
+    # an otherwise invisible USER row into this test's scoped query.
+    owner = f"starter-owner-{uuid4()}"
+    private = create_session("My saved question", owner_id=owner)
+    current = get_session(private["id"], owner_id=owner)
+    assert current is not None
+    live = _source("live-source", "Live excerpt")
+    live.update(
+        title="Dated live reporting",
+        tags=["live"],
+        collectionMethod="Google News public RSS",
+        url="https://example.test/live",
+        providerPublishedAt="2026-09-12T00:00:00Z",
+        publicationDateSource="PROVIDER",
+    )
+    synthetic = _source("synthetic-source", "Synthetic excerpt")
+    synthetic.update(
+        title="Synthetic training reporting",
+        tags=["demonstration"],
+        collectionMethod="Synthetic demonstration library",
+        url="about:blank#synthetic",
+    )
+    current["sourceFiles"] = [live, synthetic]
+    _write(current, current["version"], owner_id=owner)
+    create_session("Another analyst question", owner_id=f"different-owner-{uuid4()}")
+
+    starters = list_analysis_starters(owner)
+
+    assert [question["prompt"] for question in starters["recentQuestions"]] == ["My saved question"]
+    assert [event["title"] for event in starters["ongoingEvents"]] == ["Dated live reporting"]
+    assert starters["ongoingEvents"][0]["sourceUrl"] == "https://example.test/live"
+    assert "Dated live reporting" in starters["ongoingEvents"][0]["question"]
+
+    unknown_date = _source("unknown-date", "Unknown date excerpt")
+    unknown_date.update(
+        title="Unverified date reporting",
+        tags=["live"],
+        collectionMethod="Google News public RSS",
+        url="https://example.test/unknown-date",
+        # This timestamp resembles a publication date but was a fallback from
+        # retrieval and therefore is not permitted as an authentic lead date.
+        providerPublishedAt=None,
+        publicationDateSource="RETRIEVAL_FALLBACK",
+    )
+    current = get_session(private["id"], owner_id=owner)
+    assert current is not None
+    current["sourceFiles"].append(unknown_date)
+    _write(current, current["version"], owner_id=owner)
+    assert [event["title"] for event in list_analysis_starters(owner)["ongoingEvents"]] == [
+        "Dated live reporting"
+    ]
+
+
 @pytest.mark.asyncio
 async def test_http_research_and_assessment_flow_returns_compatible_session(client):
     created = await client.post(
@@ -127,6 +183,7 @@ async def test_http_research_and_assessment_flow_returns_compatible_session(clie
     assert researched.status_code == 200
     researched_session = researched.json()
     assert researched_session["status"] == "READY_FOR_SELECTION"
+    assert researched_session["sourceConnectorIds"] == ["demonstration-library"]
     source_ids = [source["id"] for source in researched_session["sourceFiles"]]
 
     assessed = await client.post(
@@ -168,6 +225,29 @@ async def test_http_research_and_assessment_flow_returns_compatible_session(clie
     )
     assert finalized.status_code == 200
     assert finalized.json()["assessment"]["countAnswer"]["finalized"] is True
+
+
+@pytest.mark.asyncio
+async def test_non_unclassified_marking_blocks_public_collection_but_allows_synthetic_training(client):
+    created = await client.post(
+        "/api/analysis-sessions",
+        json={"prompt": "Practice a restricted collection posture", "classification": "CUI"},
+    )
+    session_id = created.json()["id"]
+
+    blocked = await client.post(
+        f"/api/analysis-sessions/{session_id}/research",
+        json={"sourceConnectorIds": ["google-news-rss"]},
+    )
+    assert blocked.status_code == 403
+    assert "UNCLASSIFIED" in blocked.json()["error"]
+
+    demonstration = await client.post(
+        f"/api/analysis-sessions/{session_id}/research",
+        json={"sourceConnectorIds": ["demonstration-library"], "maxResults": 2},
+    )
+    assert demonstration.status_code == 200
+    assert demonstration.json()["sourceConnectorIds"] == ["demonstration-library"]
 
 
 @pytest.mark.parametrize("run_id", ["", " \t\n "])
@@ -303,11 +383,17 @@ def test_stale_fixture_cleanup_preserves_active_and_recent_runs():
         db.get(AnalysisSessionRow, active["id"]).created_at = now - timedelta(hours=2)
         db.get(AnalysisSessionRow, stale["id"]).created_at = now - timedelta(hours=2)
 
-    assert purge_stale_contract_fixtures(
+    removed = purge_stale_contract_fixtures(
         "active-cleanup-run",
         now=now,
         stale_after_ms=3_600_000,
-    ) == 1
+    )
+    # Test modules can intentionally leave independently-created CONTRACT_TEST
+    # rows until their own assertion completes. The cleanup contract removes
+    # every stale non-active fixture, so its count is not isolated to this
+    # test's stale row. Assert the requested row is among removals without
+    # deleting, or making assumptions about, any unrelated fixture.
+    assert removed >= 1
 
     with SessionLocal.begin() as db:
         active_row = db.get(AnalysisSessionRow, active["id"])

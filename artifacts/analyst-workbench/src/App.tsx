@@ -43,9 +43,9 @@ import {
   useGetAnalysisSession,
   useHealthCheck,
   useListAnalysisSessions,
+  useListAnalysisStarters,
   useListSourceConnectors,
   useListEvaluationVectors,
-  useListHistoricalRatings,
   useRunResearch,
   useUpdateIncidentReview,
   getAnalysisSession,
@@ -61,6 +61,10 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
 import NotFound from '@/pages/not-found';
+import { StarterPanel } from './workbench/StarterPanel';
+import { EvaluationVectorOverview } from './workbench/EvaluationVectorOverview';
+import { downloadAnalyticReviewReport } from './workbench/report';
+import { restoreWorkspaceForm } from './workbench/starters';
 
 const queryClient = new QueryClient();
 const clerkPubKey = publishableKeyFromHost(
@@ -223,7 +227,7 @@ function AppShell({ children }: { children: ReactNode }) {
       <div className="mt-auto px-4 pb-5">
         <div className="mb-4 border border-sidebar-border bg-sidebar-accent/50 p-3">
           <div className="flex items-center gap-2"><span className="h-1.5 w-1.5 bg-[hsl(174_55%_55%)]" /><span className="mono text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/80">Environment nominal</span></div>
-          <p className="mt-2 text-xs leading-5 text-sidebar-foreground/55">Classification is tracked per session for organizational purposes.</p>
+          <p className="mt-2 text-xs leading-5 text-sidebar-foreground/55">Classification marking restricts public collection only; it does not classify content. This environment is unapproved for classified data.</p>
         </div>
         <div className="flex items-center gap-3 border-t border-sidebar-border pt-4"><div className="grid h-8 w-8 place-items-center rounded-full bg-[hsl(39_92%_65%_/_0.2)] mono text-xs font-medium text-sidebar-primary">{analystInitials}</div><div className="min-w-0"><div className="truncate text-xs font-semibold text-white">{analystName}</div><div className="truncate mono text-[10px] text-sidebar-foreground/50">{user?.primaryEmailAddress?.emailAddress ?? 'Authenticated analyst'}</div></div><div className="ml-auto flex items-center gap-2"><button onClick={() => setLocation('/user-portal/settings')} className="text-sidebar-foreground/50 hover:text-white" data-testid="button-profile-settings" aria-label="Open settings"><Settings2 size={15} /></button><LogoutButton /></div></div>
       </div>
@@ -259,7 +263,7 @@ function ConnectorPicker({ connectors, selected, setSelected, loading, error, cl
       const ready = connector.status === SourceConnectorStatus.READY && !isDisabledByClassification;
       const active = selected.includes(connector.id);
       
-      return <button type="button" disabled={!ready} key={connector.id} onClick={() => setSelected(active ? selected.filter((id) => id !== connector.id) : [...selected, connector.id])} className={`flex items-start gap-3 border p-3 text-left transition-all ${active ? 'border-[hsl(39_92%_65%)] bg-[hsl(39_92%_65%_/_0.1)]' : 'border-border bg-card hover:border-[hsl(39_92%_65%_/_0.65)]'} ${!ready ? 'cursor-not-allowed opacity-55' : ''}`} data-testid={`button-connector-${connector.id}`}>
+      return <button type="button" disabled={!ready} aria-pressed={active} key={connector.id} onClick={() => setSelected(active ? selected.filter((id) => id !== connector.id) : [...selected, connector.id])} className={`flex items-start gap-3 border p-3 text-left transition-all ${active ? 'border-[hsl(39_92%_65%)] bg-[hsl(39_92%_65%_/_0.1)]' : 'border-border bg-card hover:border-[hsl(39_92%_65%_/_0.65)]'} ${!ready ? 'cursor-not-allowed opacity-55' : ''}`} data-testid={`button-connector-${connector.id}`}>
         <span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center border ${active ? 'border-primary bg-primary text-primary-foreground' : 'border-input bg-background'}`}>{active ? <Check size={11} /> : null}</span><span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-2"><span className="text-sm font-semibold text-foreground flex items-center gap-2">{connector.name} {isLive ? <span className="inline-flex items-center border border-[hsl(174_44%_43%_/_0.4)] bg-[hsl(174_44%_43%_/_0.1)] px-1.5 py-0.5 text-[9px] font-semibold tracking-[0.08em] text-[hsl(174_44%_32%)]">LIVE</span> : <span className="inline-flex items-center border border-[hsl(39_92%_65%_/_0.4)] bg-[hsl(39_92%_65%_/_0.1)] px-1.5 py-0.5 text-[9px] font-semibold tracking-[0.08em] text-[hsl(30_69%_32%)]">SYNTHETIC</span>}</span><StatusPill status={connector.status} /></span><span className="mt-1 block text-xs leading-5 text-muted-foreground">{connector.description}</span><span className="mono mt-2 block text-[9px] uppercase tracking-[0.08em] text-muted-foreground/80">{connector.sourceTypes.join(' / ')}</span></span>
       </button>;
     })}</div>
@@ -280,7 +284,7 @@ function SourceCard({ source, selected, onToggle }: { source: SourceFile; select
   </article>;
 }
 
-function Home() {
+export function Home() {
   const [location, setLocation] = useLocation();
   const querySessionId = new URLSearchParams(window.location.search).get('session');
   const [prompt, setPrompt] = useState('');
@@ -291,28 +295,73 @@ function Home() {
   const [createdSession, setCreatedSession] = useState<AnalysisSession | null>(null);
   const [researchResult, setResearchResult] = useState<AnalysisSession | null>(null);
   const [actionError, setActionError] = useState('');
+  const hydratedSessionId = useRef('');
+  const locallyCreatedSessionId = useRef('');
+  const connectorsInitialized = useRef(false);
+  const previousClassification = useRef(classification);
+  const [connectorResetToken, setConnectorResetToken] = useState(0);
 
-  useEffect(() => { if (querySessionId && querySessionId !== activeSessionId) setActiveSessionId(querySessionId); }, [querySessionId, activeSessionId]);
+  useEffect(() => {
+    setActiveSessionId(querySessionId ?? '');
+    setCreatedSession(null);
+    setResearchResult(null);
+    setSelectedSources([]);
+    hydratedSessionId.current = '';
+  }, [querySessionId]);
   const connectorsQuery = useListSourceConnectors();
   const sessionQuery = useGetAnalysisSession(activeSessionId, { query: { enabled: Boolean(activeSessionId), queryKey: getGetAnalysisSessionQueryKey(activeSessionId) } });
+  const startersQuery = useListAnalysisStarters();
+  const vectorsQuery = useListEvaluationVectors();
   const createSession = useCreateAnalysisSession();
   const runResearch = useRunResearch();
   const createAssessment = useCreateAssessment();
-  const session = researchResult ?? sessionQuery.data ?? createdSession;
+  const session = activeSessionId ? researchResult ?? sessionQuery.data ?? createdSession : null;
   const sources = session?.sourceFiles ?? [];
   const canResearch = Boolean(session?.id && selectedConnectors.length && !runResearch.isPending);
 
   useEffect(() => {
-    if (!connectorsQuery.data?.length || selectedConnectors.length > 0) return;
+    if (!connectorsQuery.data?.length) return;
     const permittedMode = classification === 'UNCLASSIFIED' ? 'LIVE' : 'DEMONSTRATION';
-    setSelectedConnectors(
-      connectorsQuery.data
-        .filter((connector) => connector.status === 'READY' && connector.mode === permittedMode)
-        .map((connector) => connector.id),
-    );
-  }, [classification, connectorsQuery.data, selectedConnectors.length]);
+    const permitted = connectorsQuery.data
+      .filter((connector) => connector.status === 'READY' && connector.mode === permittedMode)
+      .map((connector) => connector.id);
+    const classificationChanged = previousClassification.current !== classification;
+    previousClassification.current = classification;
+    setSelectedConnectors((current) => {
+      const normalized = current.filter((id) => permitted.includes(id));
+      if (!connectorsInitialized.current || (classificationChanged && current.length > 0 && normalized.length === 0)) {
+        connectorsInitialized.current = true;
+        return permitted;
+      }
+      return normalized;
+    });
+  }, [classification, connectorResetToken, connectorsQuery.data]);
 
   useEffect(() => {
+    const loaded = sessionQuery.data;
+    // A route opened from Sessions has no local creation state. Hydrate from
+    // the fetched record in that case, rather than relying on the starter
+    // panel's resume callback (which Sessions does not use).
+    if (
+      !loaded
+      || querySessionId !== loaded.id
+      || locallyCreatedSessionId.current === loaded.id
+      || hydratedSessionId.current === loaded.id
+    ) return;
+    const restored = restoreWorkspaceForm(loaded);
+    setPrompt(restored.prompt);
+    setClassification(restored.classification);
+    setSelectedConnectors(restored.selectedConnectors);
+    setSelectedSources(restored.selectedSources);
+    connectorsInitialized.current = true;
+    hydratedSessionId.current = loaded.id;
+  }, [sessionQuery.data]);
+
+  useEffect(() => {
+    // Hydrated saved selection is authoritative, including an intentionally
+    // empty selection. Only a locally-created/researched session gets the
+    // first-two convenience default.
+    if (session && hydratedSessionId.current === session.id) return;
     if (session?.sourceFiles?.length && selectedSources.length === 0) setSelectedSources(session.sourceFiles.slice(0, 2).map((source) => source.id));
   }, [session?.id, session?.sourceFiles, selectedSources.length]);
 
@@ -322,6 +371,7 @@ function Home() {
     if (!selectedConnectors.length) { setActionError('Select at least one ready source adapter.'); return; }
     createSession.mutate({ data: { prompt: prompt.trim(), analyst: 'A. Reyes', classification: AnalysisSessionClassification[classification] } }, {
       onSuccess: (nextSession) => {
+        locallyCreatedSessionId.current = nextSession.id;
         setCreatedSession(nextSession);
         setActiveSessionId(nextSession.id);
         setResearchResult(null);
@@ -355,13 +405,28 @@ function Home() {
     });
   };
   const isBusy = createSession.isPending || runResearch.isPending || createAssessment.isPending;
+  const useAsNewQuestion = (question: string) => {
+    setPrompt(question);
+    setActiveSessionId('');
+    setCreatedSession(null);
+    setResearchResult(null);
+    setSelectedSources([]);
+    setClassification('UNCLASSIFIED');
+    locallyCreatedSessionId.current = '';
+    connectorsInitialized.current = false;
+    setConnectorResetToken((value) => value + 1);
+    setActionError('');
+    setLocation('/user-portal');
+  };
+  const resumeSession = (sessionId: string) => setLocation(`/user-portal?session=${sessionId}`);
   return <div className="space-y-8">
     <div className="rise flex flex-col justify-between gap-5 lg:flex-row lg:items-end"><div><div className="section-kicker">Active production cell / {session ? `Session ${session.id.slice(0, 8)}` : 'New session'}</div><h1 className="display mt-2 max-w-3xl text-3xl font-bold tracking-[-0.03em] text-foreground md:text-[40px]">Draft a provisional assessment from a research question.</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">Trace the research workflow. Every drafted judgment starts with a bounded question, a declared source posture, and visible uncertainty.</p></div><div className="flex items-center gap-2 border border-border bg-card px-3 py-2 text-xs text-muted-foreground"><ShieldCheck size={15} className="text-[hsl(174_44%_43%)]" /><span>Supports ICD-203 review</span></div></div>
     <section className="scanline panel-shadow border border-card-border bg-card" data-testid="panel-research-question">
       <div className="flex items-center justify-between border-b border-border/75 px-5 py-4 md:px-6"><div className="flex items-center gap-3"><span className="mono grid h-6 w-6 place-items-center bg-primary text-[10px] text-primary-foreground">01</span><div><div className="text-sm font-semibold">Frame the question</div><div className="text-xs text-muted-foreground">Define the decision space before you collect.</div></div></div><StatusPill status={session?.status ?? 'DRAFT'} /></div>
-      <div className="grid gap-6 p-5 md:p-6 lg:grid-cols-[1.25fr_0.75fr]"><div><label htmlFor="research-prompt" className="section-kicker">Intelligence question</label><textarea id="research-prompt" rows={4} value={prompt || session?.prompt || ''} onChange={(event) => setPrompt(event.target.value)} placeholder="What do you need to know, and by when?" className="mt-2 w-full resize-none border border-input bg-background px-4 py-3 text-sm leading-6 text-foreground placeholder:text-muted-foreground/70 focus:border-primary" data-testid="input-research-prompt" /><div className="mt-3 flex flex-wrap items-center gap-3"><label className="mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground" htmlFor="classification">Classification</label><select id="classification" value={classification} onChange={(event) => setClassification(event.target.value as keyof typeof AnalysisSessionClassification)} className="border border-input bg-background px-2.5 py-1.5 text-xs text-foreground" data-testid="select-classification">{Object.values(AnalysisSessionClassification).map((value) => <option key={value} value={value}>{value}</option>)}</select><span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"><LockKeyhole size={12} /> Applied to the session record</span></div><button onClick={startSession} disabled={isBusy} className="mt-5 inline-flex items-center gap-2 bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-create-session">{isBusy ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}{runResearch.isPending ? 'Researching public sources…' : session ? 'Research as a new question' : 'Research question'}</button></div><div className="border-l border-border/70 pl-0 lg:pl-6"><div className="section-kicker">Source posture</div><p className="mt-2 text-xs leading-5 text-muted-foreground">Ready public adapters are selected by default. Adjust the selection before starting research.</p><div className="mt-4"><ConnectorPicker connectors={connectorsQuery.data} selected={selectedConnectors} setSelected={setSelectedConnectors} loading={connectorsQuery.isLoading} error={Boolean(connectorsQuery.error)} classification={classification} /></div></div></div>
+      <div className="p-5 md:p-6"><label htmlFor="research-prompt" className="section-kicker">Intelligence question</label><textarea id="research-prompt" rows={4} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="What do you need to know, and by when?" className="mt-2 w-full resize-none border border-input bg-background px-4 py-3 text-sm leading-6 text-foreground placeholder:text-muted-foreground/70 focus:border-primary" data-testid="input-research-prompt" /><div className="mt-3 flex flex-wrap items-center gap-3"><label className="mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground" htmlFor="classification">Classification marking</label><select id="classification" value={classification} onChange={(event) => setClassification(event.target.value as keyof typeof AnalysisSessionClassification)} className="border border-input bg-background px-2.5 py-1.5 text-xs text-foreground" data-testid="select-classification">{Object.values(AnalysisSessionClassification).map((value) => <option key={value} value={value}>{value}</option>)}</select><span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"><LockKeyhole size={12} /> Records provenance; it does not classify text automatically.</span></div><p className="mt-2 max-w-3xl text-[11px] leading-5 text-[hsl(30_69%_32%)]">This development environment is not approved to hold classified information. A non-UNCLASSIFIED marking only restricts public collection; do not enter classified material.</p><StarterPanel starters={startersQuery.data} loading={startersQuery.isLoading} onUseQuestion={useAsNewQuestion} onOpenSession={resumeSession} /><details className="mt-5 border border-border bg-muted/20"><summary className="cursor-pointer px-4 py-3 text-sm font-semibold">Collection settings <span className="ml-2 text-xs font-normal text-muted-foreground">Choose source providers; evidence stays in the source board below.</span></summary><div className="border-t border-border p-4"><div className="section-kicker">Source posture</div><p className="mt-2 text-xs leading-5 text-muted-foreground">Ready public adapters are selected by default. A non-UNCLASSIFIED marking blocks public providers; demonstration records remain synthetic.</p><div className="mt-4"><ConnectorPicker connectors={connectorsQuery.data} selected={selectedConnectors} setSelected={setSelectedConnectors} loading={connectorsQuery.isLoading} error={Boolean(connectorsQuery.error)} classification={classification} /></div></div></details><button onClick={startSession} disabled={isBusy} className="mt-5 inline-flex items-center gap-2 bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-create-session">{isBusy ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}{runResearch.isPending ? 'Researching selected sources…' : session ? 'Research as a new question' : 'Research question'}</button></div>
       {actionError ? <div className="flex items-center gap-2 border-t border-[hsl(5_69%_48%_/_0.22)] bg-[hsl(5_69%_48%_/_0.05)] px-5 py-3 text-xs text-[hsl(5_69%_40%)]" data-testid="error-workbench-action"><CircleAlert size={14} />{actionError}<button className="ml-auto" onClick={() => setActionError('')} aria-label="Dismiss error" data-testid="button-dismiss-error"><X size={14} /></button></div> : null}
     </section>
+    <EvaluationVectorOverview vectors={vectorsQuery.data} results={session?.assessment?.vectorResults} loading={vectorsQuery.isLoading} />
     <section className="rise rise-delay-1" data-testid="panel-research-results">
       <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
         <div>
@@ -553,8 +618,7 @@ export function CountAnswerReview({ session, onUpdated }: { session: AnalysisSes
 
 function AssessmentSummary({ session, onUpdated }: { session: AnalysisSession; onUpdated: (session: AnalysisSession) => void }) {
   const assessment = session.assessment!;
-  const historyQuery = useListHistoricalRatings();
-  const historicalRatings = assessment.historicalRatings?.length ? assessment.historicalRatings : (historyQuery.data ?? []);
+  const gaps = assessment.standards.filter((standard) => standard.status !== 'PASS');
 
   return <section className="rise border border-[hsl(174_44%_43%_/_0.35)] bg-[hsl(174_44%_43%_/_0.06)] p-5 md:p-6" data-testid="panel-assessment-summary">
     <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
@@ -562,9 +626,12 @@ function AssessmentSummary({ session, onUpdated }: { session: AnalysisSession; o
         <div className="section-kicker text-[hsl(174_44%_32%)]">{assessment.provisional ? "Provisional Assessment Complete" : "Assessment complete"}</div>
         <h2 className="display mt-1 text-2xl font-bold">A drafted judgment, ready for review.</h2>
       </div>
-      <div className="flex items-end gap-2">
+      <div className="flex items-center gap-3">
+        <button onClick={() => downloadAnalyticReviewReport(session)} className="inline-flex items-center gap-2 border border-[hsl(174_44%_43%_/_0.45)] bg-card px-3 py-2 text-xs font-semibold text-[hsl(174_44%_32%)] hover:bg-muted" data-testid="button-download-analytic-review"><FileText size={14} />Download / print review</button>
+        <div className="flex items-end gap-2">
         <span className="display text-4xl font-bold text-[hsl(174_44%_32%)]">{assessment.overallScore}</span>
         <span className="mono mb-1 text-[10px] uppercase text-muted-foreground">/ 100</span>
+        </div>
       </div>
     </div>
     <p className="mt-4 max-w-3xl text-sm leading-6 text-foreground/80">{assessment.summary}</p>
@@ -576,88 +643,15 @@ function AssessmentSummary({ session, onUpdated }: { session: AnalysisSession; o
       </div>
     )}
 
-    {assessment.trendAnalysis ? (
-      <div className="mt-6 flex flex-col gap-4 lg:flex-row">
-        <div className="flex flex-1 flex-col border border-[hsl(220_18%_86%)] bg-card p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div className="section-kicker">Trend analysis & recommendation</div>
-            <span className="inline-flex items-center border border-[hsl(39_92%_65%_/_0.4)] bg-[hsl(39_92%_65%_/_0.1)] px-2 py-0.5 text-[9px] font-semibold tracking-[0.08em] text-[hsl(30_69%_32%)] uppercase">Provisional POC Signal</span>
-          </div>
-          <div className="mt-4 flex items-center gap-6">
-            <div className="flex flex-col">
-              <span className="mono text-[10px] uppercase tracking-[0.05em] text-muted-foreground">Prior year</span>
-              <span className="mt-1 text-lg font-bold">{assessment.trendAnalysis.previousRating}</span>
-            </div>
-            <div className="flex items-center text-muted-foreground">
-              <ChevronRight size={18} />
-            </div>
-            <div className="flex flex-col">
-              <span className="mono text-[10px] uppercase tracking-[0.05em] text-muted-foreground">Recommended</span>
-              <span className="mt-1 text-lg font-bold">{assessment.trendAnalysis.recommendedRating}</span>
-            </div>
-            <div className="ml-auto flex items-center justify-center border-l border-border/70 pl-6">
-              {assessment.trendAnalysis.direction === 'UP' ? (
-                <div className="flex flex-col items-center text-[hsl(5_69%_48%)]">
-                  <TrendingUp size={28} strokeWidth={2.5} />
-                  <span className="mt-1 font-bold text-xs tracking-widest">UP</span>
-                </div>
-              ) : assessment.trendAnalysis.direction === 'DOWN' ? (
-                <div className="flex flex-col items-center text-[hsl(174_44%_43%)]">
-                  <TrendingDown size={28} strokeWidth={2.5} />
-                  <span className="mt-1 font-bold text-xs tracking-widest">DOWN</span>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center text-[hsl(30_69%_32%)]">
-                  <Minus size={28} strokeWidth={2.5} />
-                  <span className="mt-1 font-bold text-xs tracking-widest">SAME</span>
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="mt-2 text-xs italic text-muted-foreground">Requires analyst approval</div>
-          <div className="mt-5 flex items-center gap-2 text-sm text-foreground/80">
-            <span className="font-semibold">Confidence:</span>
-            <StatusPill status={assessment.trendAnalysis.confidence} />
-          </div>
-          <p className="mt-3 text-sm leading-6 text-muted-foreground">{assessment.trendAnalysis.rationale}</p>
-          {assessment.trendAnalysis.drivers?.length > 0 && (
-            <div className="mt-5 border-t border-border/70 pt-4">
-              <div className="mono mb-2 text-[10px] uppercase tracking-[0.1em] text-muted-foreground">Key Drivers</div>
-              <ul className="list-inside list-disc space-y-1 pl-1 text-sm text-foreground/80">
-                {assessment.trendAnalysis.drivers.map((driver, idx) => (
-                  <li key={idx}>{driver}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-        
-        {historicalRatings.length > 0 && (
-          <div className="flex w-full flex-col border border-[hsl(220_18%_86%)] bg-card lg:w-72 shadow-sm">
-            <div className="border-b border-border/70 bg-muted/40 px-5 py-4">
-              <div className="section-kicker">Prior-year history</div>
-            </div>
-            <div className="flex-1 divide-y divide-border/60">
-              {historicalRatings.map((hr) => (
-                <div key={hr.year} className="p-4 px-5">
-                  <div className="flex items-center justify-between">
-                    <span className="mono text-sm font-bold text-foreground">{hr.year}</span>
-                    <div className="flex items-center gap-2">
-                      {hr.placeholder && <span className="mono text-[9px] uppercase tracking-[0.08em] text-[hsl(30_69%_32%)] font-semibold">Stand-in history</span>}
-                      <StatusPill status={hr.rating} />
-                    </div>
-                  </div>
-                  <div className="mt-2 text-xs leading-5 text-muted-foreground">{hr.summary}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    ) : null}
+    <section className="mt-6 border border-[hsl(39_92%_65%_/_0.42)] bg-card p-4" data-testid="panel-assessment-gaps">
+      <div className="section-kicker">Evidence gaps, assumptions & alternatives</div>
+      <p className="mt-2 text-xs leading-5 text-muted-foreground">These are provisional review prompts drawn from the assessment findings. They are not unobserved facts.</p>
+      {gaps.length ? <ul className="mt-3 space-y-2 text-sm leading-5 text-foreground/85">{gaps.map((standard) => <li className="border-l-2 border-[hsl(39_92%_65%)] pl-3" key={standard.id}><span className="font-semibold">{standard.shortName}:</span> {standard.finding}</li>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">No structured gaps were generated. Review selected evidence and assumptions before release.</p>}
+    </section>
 
     <div className="mt-8 border-t border-border/60 pt-6">
-      <div className="section-kicker mb-4 text-foreground/80">ICD-203 Tradecraft Standards</div>
+        <div className="section-kicker mb-2 text-foreground/80">Provisional ICD-203 Tradecraft Review</div>
+        <p className="mb-4 text-xs leading-5 text-muted-foreground">These heuristic findings support analyst review; they are not a formal ICD-203 determination or release authority.</p>
       <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
         {assessment.standards.map((standard) => (
           <div className="border border-border/70 bg-card/70 p-3" key={standard.id}>
@@ -674,38 +668,10 @@ function AssessmentSummary({ session, onUpdated }: { session: AnalysisSession; o
       </div>
     </div>
 
-    {assessment.vectorResults?.length > 0 && (
-      <div className="mt-6 border-t border-border/60 pt-6">
-        <div className="section-kicker mb-4 text-foreground/80">Stand-in Evaluation Vectors</div>
-        <div className="grid gap-3 lg:grid-cols-2">
-          {assessment.vectorResults.map((vector) => (
-            <div className="flex flex-col border border-border/70 bg-card/70 p-4" key={vector.id}>
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold">{vector.name}</div>
-                  <div className="mono mt-1 text-[9px] uppercase tracking-[0.08em] text-muted-foreground">Weight: {(vector.weight * 100).toFixed(0)}%</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold">{vector.score}</span>
-                  <StatusPill status={vector.status} />
-                </div>
-              </div>
-              <p className="mt-3 text-xs leading-5 text-muted-foreground">{vector.rationale}</p>
-              {vector.evidenceSourceFileIds?.length > 0 && (
-                <div className="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
-                  <FileText size={12} />
-                  <span className="mono text-[9px] uppercase tracking-[0.08em]">Supported by {vector.evidenceSourceFileIds.length} source{vector.evidenceSourceFileIds.length !== 1 ? 's' : ''}</span>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-    )}
   </section>;
 }
 
-function SessionsPage() {
+export function SessionsPage() {
   const sessionsQuery = useListAnalysisSessions();
   const [, setLocation] = useLocation();
   return <div className="space-y-7"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><div className="section-kicker">Production history</div><h1 className="display mt-2 text-3xl font-bold tracking-tight">Recent sessions</h1><p className="mt-2 text-sm text-muted-foreground">Every question, source run, and assessment stays attributable to its originating session.</p></div><Link href="/user-portal" className="inline-flex items-center gap-2 self-start bg-primary px-3.5 py-2.5 text-sm font-semibold text-primary-foreground" data-testid="link-new-session"><Plus size={15} /> New session</Link></div><div className="flex flex-wrap items-center gap-2 border-y border-border/70 py-3 text-xs text-muted-foreground"><Search size={14} /><span>Showing latest workspace activity</span><span className="ml-auto mono">{sessionsQuery.data?.length ?? 0} records</span></div>{sessionsQuery.isLoading ? <LoadingRows count={5} /> : sessionsQuery.error ? <div className="border border-[hsl(5_69%_48%_/_0.25)] bg-card p-6" data-testid="error-sessions"><CircleAlert className="text-[hsl(5_69%_48%)]" size={18} /><h3 className="mt-3 font-semibold">Sessions could not be loaded</h3><p className="mt-1 text-sm text-muted-foreground">The workspace history service did not respond. Retry from the browser when the API is available.</p></div> : sessionsQuery.data?.length ? <div className="overflow-x-auto border border-border bg-card"><table className="w-full min-w-[760px] text-left"><thead className="border-b border-border bg-muted/60"><tr className="mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground"><th className="px-5 py-3 font-medium">Question</th><th className="px-4 py-3 font-medium">Analyst</th><th className="px-4 py-3 font-medium">Created</th><th className="px-4 py-3 font-medium">Sources</th><th className="px-4 py-3 font-medium">Status</th><th className="px-4 py-3" /></tr></thead><tbody>{sessionsQuery.data.map((item) => <tr className="border-b border-border/70 last:border-0 hover:bg-muted/35" key={item.id} data-testid={`row-session-${item.id}`}><td className="max-w-[430px] px-5 py-4"><div className="line-clamp-2 text-sm font-semibold text-foreground">{item.prompt}</div><div className="mono mt-1 text-[10px] text-muted-foreground">{item.classification}</div></td><td className="px-4 py-4 text-sm text-muted-foreground">{item.analyst}</td><td className="px-4 py-4 text-xs text-muted-foreground">{formatDateTime(item.createdAt)}</td><td className="px-4 py-4 mono text-xs text-muted-foreground">{item.sourceFiles.length.toString().padStart(2, '0')}</td><td className="px-4 py-4"><StatusPill status={item.status} /></td><td className="px-4 py-4 text-right"><button onClick={() => setLocation(`/user-portal?session=${item.id}`)} className="inline-flex items-center gap-1 text-xs font-semibold text-[hsl(174_44%_32%)] hover:underline" data-testid={`button-open-session-${item.id}`}>Open <ArrowUpRight size={13} /></button></td></tr>)}</tbody></table></div> : <EmptyState icon={Clock3} title="No analysis sessions yet" detail="Your completed and in-progress questions will appear here." action={<Link href="/user-portal" className="inline-flex items-center gap-2 bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground" data-testid="link-start-first-session"><Plus size={14} /> Start first session</Link>} />}</div>;
@@ -720,7 +686,7 @@ function StandardsPage() {
     <div>
       <div className="section-kicker">Review doctrine</div>
       <h1 className="display mt-2 text-3xl font-bold tracking-tight">Tradecraft standards & Vectors</h1>
-      <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Nine review lenses keep production honest, paired with dynamic grading vectors configured for the operational environment.</p>
+      <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Nine ICD-203 review lenses support disciplined production. Separate placeholder vectors are visible in the workbench before collection.</p>
     </div>
 
     <section className="space-y-5">
@@ -733,8 +699,8 @@ function StandardsPage() {
 
     <section className="space-y-5">
       <div>
-        <h2 className="text-xl font-bold">Stand-in Evaluation Vectors</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Configurable criteria used for automated assessment scoring.</p>
+        <h2 className="text-xl font-bold">Placeholder Evaluation Vectors</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Metadata heuristics only; they do not evaluate report content or replace ICD-203 review.</p>
       </div>
       
       {vectorsQuery.isLoading ? <LoadingRows count={3} /> : vectorsQuery.error ? <EmptyState icon={CircleAlert} title="Vectors unavailable" detail="The evaluation vector registry could not be reached." /> : <div className="grid gap-3 lg:grid-cols-2">
@@ -766,7 +732,7 @@ function SettingsPage() {
     <div className="grid gap-5 lg:grid-cols-[0.8fr_1.2fr]">
       <div className="flex flex-col gap-5">
         <section className="border border-card-border bg-card p-5 md:p-6">
-          <div className="flex items-center gap-3 border-b border-border/70 pb-4"><LockKeyhole size={18} className="text-[hsl(39_92%_48%)]" /><div><div className="text-sm font-semibold">Workspace classification</div><div className="text-xs text-muted-foreground">Applied at session creation</div></div></div><div className="mt-5 space-y-3">{['UNCLASSIFIED', 'CUI', 'SECRET', 'TS'].map((level, index) => <div className={`flex items-center justify-between border p-3 ${index === 0 ? 'border-[hsl(39_92%_65%)] bg-[hsl(39_92%_65%_/_0.09)]' : 'border-border bg-muted/30 opacity-65'}`} key={level}><div><div className="mono text-xs font-medium">{level}</div><div className="mt-1 text-[11px] text-muted-foreground">{index === 0 ? 'Available in this workspace' : 'Restricted by workspace policy'}</div></div>{index === 0 ? <Check size={15} className="text-[hsl(174_44%_43%)]" /> : <LockKeyhole size={13} className="text-muted-foreground" />}</div>)}</div>
+          <div className="flex items-center gap-3 border-b border-border/70 pb-4"><LockKeyhole size={18} className="text-[hsl(39_92%_48%)]" /><div><div className="text-sm font-semibold">Classification marking</div><div className="text-xs text-muted-foreground">Session provenance and public-collection control</div></div></div><div className="mt-4 border-l-2 border-[hsl(39_92%_65%)] pl-3 text-xs leading-5 text-muted-foreground">Markings do not classify text automatically and do not authorize classified handling. This development environment is not approved to store classified information.</div><div className="mt-5 space-y-3">{['UNCLASSIFIED', 'CUI', 'SECRET', 'TS'].map((level, index) => <div className={`flex items-center justify-between border p-3 ${index === 0 ? 'border-[hsl(39_92%_65%)] bg-[hsl(39_92%_65%_/_0.09)]' : 'border-border bg-muted/30 opacity-65'}`} key={level}><div><div className="mono text-xs font-medium">{level}</div><div className="mt-1 text-[11px] text-muted-foreground">{index === 0 ? 'Public connectors may be used' : 'Blocks public connectors; does not permit classified content'}</div></div>{index === 0 ? <Check size={15} className="text-[hsl(174_44%_43%)]" /> : <LockKeyhole size={13} className="text-muted-foreground" />}</div>)}</div>
         </section>
         <section className="border border-card-border bg-card p-5 md:p-6" data-testid="panel-settings-vectors">
           <div className="flex items-center gap-3 border-b border-border/70 pb-4"><SlidersHorizontal size={18} className="text-[hsl(174_44%_43%)]" /><div><div className="text-sm font-semibold">Evaluation Vectors</div><div className="text-xs text-muted-foreground">Stand-in grading criteria</div></div></div>

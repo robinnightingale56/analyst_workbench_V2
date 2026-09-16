@@ -47,7 +47,9 @@ A secure research and assessment workspace that turns analyst questions into sou
 - Query live proof-of-concept sources through Google News RSS, the Federal Register API, and Crossref.
 - Review source provenance, reliability, relevance, key points, and BLUF cards.
 - Select evidence and assess it against nine ICD-203 analytic tradecraft standards.
-- Grade against six stand-in vectors and compare with placeholder historical ratings to produce a provisional up/same/down trend signal.
+- Surface six placeholder evaluation vectors before collection. Their metadata-only scores are provisional and are not presented as historical or content-grounded ratings.
+- Start from editable topic prompts, authenticated-user recent questions, or dated public-source leads from that user's prior research; the leads are not a current-events feed and are unavailable until such research exists.
+- Export a printable HTML analytic review with selected evidence URLs, available passages, exact incident evidence where present, gaps, assumptions, alternatives, and provisional ICD-203 findings.
 - Review session history, standards guidance, connector readiness, and API health.
 
 ## User preferences

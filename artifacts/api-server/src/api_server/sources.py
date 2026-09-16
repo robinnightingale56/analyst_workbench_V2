@@ -44,15 +44,47 @@ def _tags(prompt: str) -> list[str]:
     return [x for x in re.split(r"[^a-z0-9]+", prompt.lower()) if len(x) > 4][:4]
 
 
-def _published(raw: str | None, fallback: str) -> str:
+def _published(raw: str | None, fallback: str) -> tuple[str, str | None]:
     if not raw:
-        return fallback
+        return fallback, None
     try:
         from email.utils import parsedate_to_datetime
         date = parsedate_to_datetime(raw)
-        return date.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        return date.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"), None
     except (TypeError, ValueError, OverflowError):
-        return fallback
+        pass
+    try:
+        date = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if date.tzinfo is None:
+            date = date.replace(tzinfo=timezone.utc)
+        return date.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"), None
+    except (TypeError, ValueError, OverflowError):
+        return fallback, None
+
+
+def _provider_published(raw: str | None, fallback: str) -> tuple[str, str | None, str]:
+    published_at, provider_published_at = _published(raw, fallback)
+    # `_published` returns the parsed provider time as the first value; retain
+    # it separately so downstream lead generation never mistakes a retrieval
+    # fallback for authentic publisher dating.
+    if raw and published_at != fallback:
+        return published_at, published_at, "PROVIDER"
+    return published_at, provider_published_at, "RETRIEVAL_FALLBACK"
+
+
+def _crossref_published(work: dict, fallback: str) -> tuple[str, str | None, str]:
+    for key in ("published-online", "published-print", "published", "issued", "created"):
+        raw = work.get(key)
+        parts = raw.get("date-parts", [[]])[0] if isinstance(raw, dict) else []
+        if not parts or not isinstance(parts[0], int):
+            continue
+        try:
+            year, month, day = parts[0], parts[1] if len(parts) > 1 else 1, parts[2] if len(parts) > 2 else 1
+            parsed = datetime(year, month, day, tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+            return parsed, parsed, "PROVIDER"
+        except ValueError:
+            continue
+    return fallback, None, "RETRIEVAL_FALLBACK"
 
 
 def _rss_items(xml: str) -> list[BeautifulSoup]:
@@ -238,9 +270,13 @@ def parse_bing_news_rss(xml: str, prompt: str, limit: int, retrieved_at: str | N
         source = _clean(source_tag.get_text() if source_tag else None, "Bing News source")
         description = _clean(item.find("description").get_text() if item.find("description") else None, "")
         substantive = len(description) >= 80 and description.lower() != title.lower()
+        published_at, provider_published_at, date_source = _provider_published(
+            item.find("pubDate").get_text() if item.find("pubDate") else None,
+            retrieved_at,
+        )
         files.append({
             "id": str(uuid4()), "title": title, "source": source, "sourceType": "NEWS",
-            "publishedAt": _published(item.find("pubDate").get_text() if item.find("pubDate") else None, retrieved_at),
+            "publishedAt": published_at, "providerPublishedAt": provider_published_at, "publicationDateSource": date_source,
             "relevance": max(.55, .95 - index * .035), "reliability": "UNKNOWN",
             "bluf": description[:700] if substantive else f"{title}. The feed did not include a substantive report excerpt.",
             "keyPoints": [f"Published by {source} and discovered through Bing News.", "The public feed supplied a substantive report snippet used for candidate extraction." if substantive else "The public feed supplied discovery metadata only; it cannot support a factual count.", "Review the linked report before final dissemination."],
@@ -268,7 +304,7 @@ def demonstration_files(prompt: str, max_results: int = 4) -> list[dict]:
     ]
     result = []
     for index, (title, source_type, reliability, bluf, content) in enumerate(templates[:max_results]):
-        result.append({"id": str(uuid4()), "title": title, "source": "Demonstration Library", "sourceType": source_type, "publishedAt": (now.timestamp() - index * 86400).__str__(), "relevance": .82 - index * .08, "reliability": reliability, "bluf": bluf, "keyPoints": ["This record is synthetic and must not be cited as live reporting.", "Use it only to exercise selection and assessment workflows."], "tags": _tags(prompt) + ["demonstration"], "url": f"about:blank#demonstration-source-{index + 1}", "retrievedAt": now.isoformat().replace("+00:00", "Z"), "collectionMethod": "Synthetic demonstration library", "content": content, "contentDepth": "FULL_TEXT"})
+        result.append({"id": str(uuid4()), "title": title, "source": "Demonstration Library", "sourceType": source_type, "publishedAt": (now.timestamp() - index * 86400).__str__(), "providerPublishedAt": None, "publicationDateSource": "SYNTHETIC", "relevance": .82 - index * .08, "reliability": reliability, "bluf": bluf, "keyPoints": ["This record is synthetic and must not be cited as live reporting.", "Use it only to exercise selection and assessment workflows."], "tags": _tags(prompt) + ["demonstration"], "url": f"about:blank#demonstration-source-{index + 1}", "retrievedAt": now.isoformat().replace("+00:00", "Z"), "collectionMethod": "Synthetic demonstration library", "content": content, "contentDepth": "FULL_TEXT"})
     # Preserve ISO timestamps (the timestamp above is only used to avoid a
     # dependency on date arithmetic in generated fixture text).
     for item in result:
@@ -299,19 +335,28 @@ async def research(prompt: str, connector_ids: list[str], max_results: int = 12)
                         title = _clean(item.find("title").get_text() if item.find("title") else None, "Untitled news report")
                         source_tag = item.find("source")
                         source = _clean(source_tag.get_text() if source_tag else None, "News source")
-                        files.append({"id": str(uuid4()), "title": title, "source": source, "sourceType": "NEWS", "publishedAt": _published(item.find("pubDate").get_text() if item.find("pubDate") else None, datetime.now(timezone.utc).isoformat()), "relevance": max(.55, .95 - index * .035), "reliability": "UNKNOWN", "bluf": f"{title}. This is a live discovery result; source credibility and the full article must be reviewed before use.", "keyPoints": [f"Published by {source} and discovered through Google News.", "The feed supplies article metadata rather than a validated intelligence judgment.", "Review the linked article for sourcing, context, and possible bias."], "tags": _tags(prompt) + ["live", "news"], "url": item.find("link").get_text(strip=True) if item.find("link") else "https://news.google.com/", "retrievedAt": datetime.now(timezone.utc).isoformat(), "collectionMethod": "Google News public RSS", "content": _clean(item.find("description").get_text() if item.find("description") else None, f"{title}. The RSS provider did not include an article excerpt; use the linked report for full context.", 8000), "contentDepth": "METADATA"})
+                        retrieved_at = datetime.now(timezone.utc).isoformat()
+                        published_at, provider_published_at, date_source = _provider_published(
+                            item.find("pubDate").get_text() if item.find("pubDate") else None,
+                            retrieved_at,
+                        )
+                        files.append({"id": str(uuid4()), "title": title, "source": source, "sourceType": "NEWS", "publishedAt": published_at, "providerPublishedAt": provider_published_at, "publicationDateSource": date_source, "relevance": max(.55, .95 - index * .035), "reliability": "UNKNOWN", "bluf": f"{title}. This is a live discovery result; source credibility and the full article must be reviewed before use.", "keyPoints": [f"Published by {source} and discovered through Google News.", "The feed supplies article metadata rather than a validated intelligence judgment.", "Review the linked article for sourcing, context, and possible bias."], "tags": _tags(prompt) + ["live", "news"], "url": item.find("link").get_text(strip=True) if item.find("link") else "https://news.google.com/", "retrievedAt": retrieved_at, "collectionMethod": "Google News public RSS", "content": _clean(item.find("description").get_text() if item.find("description") else None, f"{title}. The RSS provider did not include an article excerpt; use the linked report for full context.", 8000), "contentDepth": "METADATA"})
                 elif connector == "federal-register":
                     data = await _get(client, "https://www.federalregister.gov/api/v1/documents.json?" + str(httpx.QueryParams({"per_page": min(max_results, 20), "order": "relevance", "conditions[term]": prompt})), json_response=True)
                     for index, document in enumerate(data.get("results", [])):
                         title = _clean(document.get("title"), "Untitled Federal Register document")
                         abstract = _clean(document.get("abstract"), f"{title}. Review the official document for scope, authorities, dates, and implications.")
-                        files.append({"id": str(uuid4()), "title": title, "source": ", ".join(a.get("name", "") for a in document.get("agencies", [])) or "Federal Register", "sourceType": "GOVERNMENT", "publishedAt": document.get("publication_date", "") + "T12:00:00Z", "relevance": max(.58, .96 - index * .04), "reliability": "HIGH", "bluf": abstract, "keyPoints": ["Primary-source authority is high; analytic relevance still requires review."], "tags": _tags(prompt) + ["live", "official"], "url": document.get("html_url", "https://www.federalregister.gov/"), "retrievedAt": datetime.now(timezone.utc).isoformat(), "collectionMethod": "Federal Register public API", "content": abstract, "contentDepth": "EXCERPT" if document.get("abstract") else "METADATA"})
+                        retrieved_at = datetime.now(timezone.utc).isoformat()
+                        published_at, provider_published_at, date_source = _provider_published(document.get("publication_date"), retrieved_at)
+                        files.append({"id": str(uuid4()), "title": title, "source": ", ".join(a.get("name", "") for a in document.get("agencies", [])) or "Federal Register", "sourceType": "GOVERNMENT", "publishedAt": published_at, "providerPublishedAt": provider_published_at, "publicationDateSource": date_source, "relevance": max(.58, .96 - index * .04), "reliability": "HIGH", "bluf": abstract, "keyPoints": ["Primary-source authority is high; analytic relevance still requires review."], "tags": _tags(prompt) + ["live", "official"], "url": document.get("html_url", "https://www.federalregister.gov/"), "retrievedAt": retrieved_at, "collectionMethod": "Federal Register public API", "content": abstract, "contentDepth": "EXCERPT" if document.get("abstract") else "METADATA"})
                 else:
                     data = await _get(client, "https://api.crossref.org/works?" + str(httpx.QueryParams({"query": prompt, "rows": min(max_results, 20), "sort": "relevance"})), json_response=True)
                     for index, work in enumerate(data.get("message", {}).get("items", [])):
                         title = _clean((work.get("title") or [None])[0], "Untitled research publication")
                         abstract = _clean(work.get("abstract"), f"{title}. Crossref provides publication metadata; methodology and findings require review at the linked source.")
-                        files.append({"id": str(uuid4()), "title": title, "source": work.get("publisher") or "Crossref indexed publisher", "sourceType": "ACADEMIC", "publishedAt": datetime.now(timezone.utc).isoformat(), "relevance": max(.55, .94 - index * .035), "reliability": "MODERATE", "bluf": abstract, "keyPoints": ["Crossref provides publication metadata; methodology and findings require review."], "tags": _tags(prompt) + ["live", "research"], "url": work.get("URL") or "https://www.crossref.org/", "retrievedAt": datetime.now(timezone.utc).isoformat(), "collectionMethod": "Crossref public REST API", "content": abstract, "contentDepth": "EXCERPT" if work.get("abstract") else "METADATA"})
+                        retrieved_at = datetime.now(timezone.utc).isoformat()
+                        published_at, provider_published_at, date_source = _crossref_published(work, retrieved_at)
+                        files.append({"id": str(uuid4()), "title": title, "source": work.get("publisher") or "Crossref indexed publisher", "sourceType": "ACADEMIC", "publishedAt": published_at, "providerPublishedAt": provider_published_at, "publicationDateSource": date_source, "relevance": max(.55, .94 - index * .035), "reliability": "MODERATE", "bluf": abstract, "keyPoints": ["Crossref provides publication metadata; methodology and findings require review."], "tags": _tags(prompt) + ["live", "research"], "url": work.get("URL") or "https://www.crossref.org/", "retrievedAt": retrieved_at, "collectionMethod": "Crossref public REST API", "content": abstract, "contentDepth": "EXCERPT" if work.get("abstract") else "METADATA"})
             except Exception as exc:
                 notices.append(f"{next(x['name'] for x in SOURCE_CONNECTORS if x['id'] == connector)} was unavailable: {exc}.")
     if "demonstration-library" in selected:

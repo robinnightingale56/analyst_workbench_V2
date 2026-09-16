@@ -120,6 +120,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /analysis-starters:
+    get:
+      operationId: listAnalysisStarters
+      tags: [analysis]
+      summary: List the authenticated analyst's question starters
+      description: Recent questions and dated public-source leads from the analyst's own prior research; this is not a current-events feed.
+      responses:
+        "200":
+          description: Authenticated analyst-scoped starters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisStarters"
   /analysis-sessions/{sessionId}/research:
     post:
       operationId: runResearch
@@ -370,6 +383,7 @@ components:
         - createdAt
         - sourceFiles
         - sourceNotices
+        - sourceConnectorIds
         - assessment
         - version
         - updatedAt
@@ -397,6 +411,10 @@ components:
           type: array
           items:
             type: string
+        sourceConnectorIds:
+          type: array
+          items:
+            type: string
         assessment:
           oneOf:
             - $ref: "#/components/schemas/Assessment"
@@ -416,6 +434,8 @@ components:
         - source
         - sourceType
         - publishedAt
+        - providerPublishedAt
+        - publicationDateSource
         - relevance
         - reliability
         - bluf
@@ -438,6 +458,12 @@ components:
           enum: [NEWS, GOVERNMENT, ACADEMIC, SOCIAL, WEB, INTERNAL]
         publishedAt:
           type: string
+        providerPublishedAt:
+          type: ["string", "null"]
+          description: Authentic publication timestamp parsed from the provider, if available.
+        publicationDateSource:
+          type: string
+          enum: [PROVIDER, RETRIEVAL_FALLBACK, SYNTHETIC, UNKNOWN]
         relevance:
           type: number
           minimum: 0
@@ -466,6 +492,50 @@ components:
         contentDepth:
           type: string
           enum: [FULL_TEXT, EXCERPT, METADATA]
+    AnalysisStarters:
+      type: object
+      required: [recentQuestions, ongoingEvents]
+      properties:
+        recentQuestions:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecentQuestionStarter"
+        ongoingEvents:
+          type: array
+          items:
+            $ref: "#/components/schemas/OngoingEventStarter"
+    RecentQuestionStarter:
+      type: object
+      required: [sessionId, prompt, classification, updatedAt]
+      properties:
+        sessionId:
+          type: string
+        prompt:
+          type: string
+        classification:
+          type: string
+          enum: [UNCLASSIFIED, CUI, SECRET, TS]
+        updatedAt:
+          type: string
+    OngoingEventStarter:
+      type: object
+      required: [sessionId, title, question, sourceTitle, sourceUrl, publishedAt, retrievedAt]
+      properties:
+        sessionId:
+          type: string
+        title:
+          type: string
+        question:
+          type: string
+        sourceTitle:
+          type: string
+        sourceUrl:
+          type: string
+          format: uri
+        publishedAt:
+          type: string
+        retrievedAt:
+          type: string
     SourceConnector:
       type: object
       required: [id, name, description, status, mode, sourceTypes]

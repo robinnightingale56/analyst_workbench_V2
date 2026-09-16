@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { SourceFileContentDepth } from './sourceFileContentDepth';
+import type { SourceFilePublicationDateSource } from './sourceFilePublicationDateSource';
 import type { SourceFileReliability } from './sourceFileReliability';
 import type { SourceFileSourceType } from './sourceFileSourceType';
 
@@ -15,6 +16,12 @@ export interface SourceFile {
   source: string;
   sourceType: SourceFileSourceType;
   publishedAt: string;
+  /**
+     * Authentic publication timestamp parsed from the provider, if available.
+     * @nullable
+     */
+  providerPublishedAt: string | null;
+  publicationDateSource: SourceFilePublicationDateSource;
   /**
      * @minimum 0
      * @maximum 1
