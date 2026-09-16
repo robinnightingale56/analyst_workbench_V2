@@ -9,7 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 import httpx
-from .auth import require_trusted_origin, require_user, trusted_origins
+from .auth import auth_mode, auth_readiness, require_trusted_origin, require_user, trusted_origins
 from .config import get_settings
 from .engine import EVALUATION_VECTORS, HISTORICAL_RATINGS, deduplicate_incidents, incident_citation_error
 from .models import AnalysisStarters, ArchiveUpdate, AssessmentInput, CreateSession, IncidentReview, ResearchRun
@@ -89,7 +89,15 @@ async def healthz():
         policy = get_settings().archive_policy()
     except Exception:
         return _error("Archive policy configuration is invalid", 503)
-    return {"status": "ok", "archivePolicy": policy}
+    # This remains a liveness endpoint. Authentication readiness is reported
+    # separately so an unconfigured PKI deployment cannot look deployable.
+    return {"status": "ok", "archivePolicy": policy, "authentication": auth_readiness()}
+
+
+@app.get("/api/auth-mode")
+async def get_auth_mode():
+    """Expose non-secret build/deployment mode information for mismatch checks."""
+    return auth_readiness()
 
 
 CLERK_PROXY_PATH = "/api/__clerk"
@@ -116,6 +124,13 @@ def _public_host(request: Request) -> str:
 @app.api_route(f"{CLERK_PROXY_PATH}/{{proxy_path:path}}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"])
 async def clerk_frontend_api_proxy(request: Request, proxy_path: str = ""):
     """Production Clerk Frontend API proxy equivalent to the canonical template."""
+    mode = auth_mode()
+    if mode is None:
+        return _error("AUTH_MODE_INVALID", 503)
+    if mode != "clerk":
+        # Do not provide an auth-provider escape hatch in PKI mode, even where
+        # Clerk keys or browser cookies remain present during a migration.
+        return _error("Clerk proxy disabled", 404)
     if os.getenv("NODE_ENV") != "production" or not os.getenv("CLERK_SECRET_KEY"):
         return _error("Clerk proxy is unavailable", 404)
 

@@ -1,8 +1,10 @@
-"""Clerk cookie-session authentication for the FastAPI API.
+"""Authentication boundary for the FastAPI API.
 
-The browser sends Clerk's ``__session`` cookie automatically on same-origin
-requests.  Identity is extracted only after signature, issuer, expiry, and
-subject validation by PyJWT; no request header or body can select a user.
+The default Clerk implementation validates the same-origin ``__session``
+cookie.  PKI mode is deliberately a closed readiness state until an approved
+gateway or identity-provider adapter is implemented; it never accepts
+certificate uploads, arbitrary identity headers, or Clerk sessions as a
+substitute.
 """
 from __future__ import annotations
 
@@ -10,7 +12,8 @@ import os
 import base64
 import binascii
 from functools import lru_cache
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Literal
 from urllib.parse import urlparse
 
 import jwt
@@ -20,10 +23,75 @@ from jwt import PyJWKClient
 SESSION_COOKIE = "__session"
 ALGORITHMS = ("RS256", "RS384", "RS512")
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+AuthMode = Literal["clerk", "pki"]
+
+
+@dataclass(frozen=True)
+class TrustedPrincipal:
+    """A verified identity exposed to application authorization code.
+
+    ``subject`` is deliberately the existing owner identifier.  A future
+    approved PKI adapter must construct this object only after cryptographic
+    verification and reviewed subject-to-owner mapping; request metadata must
+    never construct it directly.
+    """
+
+    subject: str
+    provider: str
 
 
 class ClerkAuthenticationError(Exception):
     """Raised when a request does not contain a valid Clerk session JWT."""
+
+
+def auth_mode() -> AuthMode | None:
+    """Return the configured authentication mode, or None for an invalid mode.
+
+    The default preserves current Clerk development deployments.  Returning
+    ``None`` instead of silently falling back makes a typo fail closed.
+    """
+    configured = os.getenv("AUTH_MODE", "clerk").strip()
+    return configured if configured in {"clerk", "pki"} else None
+
+
+def auth_readiness() -> dict[str, object]:
+    """Public, non-secret auth posture for deployment/readiness reporting."""
+    mode = auth_mode()
+    if mode is None:
+        return {
+            "mode": "invalid",
+            "ready": False,
+            "reason": "AUTH_MODE_INVALID",
+        }
+    if mode == "pki":
+        return {
+            "mode": "pki",
+            "ready": False,
+            "reason": "PKI_NOT_CONFIGURED",
+        }
+    try:
+        _issuer()
+    except ClerkAuthenticationError:
+        return {
+            "mode": "clerk",
+            "ready": False,
+            "reason": "CLERK_NOT_CONFIGURED",
+        }
+    return {"mode": "clerk", "ready": True}
+
+
+def _not_configured_error(reason: str) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=reason)
+
+
+def require_auth_ready() -> AuthMode:
+    """Gate protected behavior before any provider-specific authentication."""
+    mode = auth_mode()
+    if mode is None:
+        raise _not_configured_error("AUTH_MODE_INVALID")
+    if mode == "pki":
+        raise _not_configured_error("PKI_NOT_CONFIGURED")
+    return mode
 
 
 def trusted_origins() -> set[str]:
@@ -62,6 +130,9 @@ def trusted_origins() -> set[str]:
 
 def require_trusted_origin(request: Request) -> None:
     """Reject cookie-authenticated writes that did not originate at this app."""
+    # In PKI mode every protected route has the same explicit readiness
+    # response, including writes with a forged Origin header.
+    require_auth_ready()
     if request.method in SAFE_METHODS:
         return
     origin = request.headers.get("origin", "").strip().rstrip("/").lower()
@@ -160,7 +231,18 @@ def verify_clerk_session(token: str) -> str:
 
 
 async def require_user(request: Request) -> str:
-    """FastAPI dependency for every user-visible API route."""
+    """Compatibility dependency returning the existing owner-ID string."""
+    return (await require_principal(request)).subject
+
+
+async def require_principal(request: Request) -> TrustedPrincipal:
+    """Provider-neutral FastAPI dependency for protected routes.
+
+    This is intentionally the sole boundary future IdP/mTLS adapters should
+    implement against.  There is no generic header, certificate, or body
+    fallback while PKI readiness is incomplete.
+    """
+    require_auth_ready()
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
         raise HTTPException(
@@ -168,7 +250,7 @@ async def require_user(request: Request) -> str:
             detail="Authentication required",
         )
     try:
-        return verify_clerk_session(token)
+        return TrustedPrincipal(subject=verify_clerk_session(token), provider="clerk")
     except ClerkAuthenticationError:
         # Never disclose key, issuer, or JWT parse errors to an unauthenticated
         # caller.  They are useful only to server operators.

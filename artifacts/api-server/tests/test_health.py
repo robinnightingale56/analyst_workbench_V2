@@ -23,6 +23,7 @@ async def get_health_response() -> httpx.Response:
 
 @pytest.mark.asyncio
 async def test_health_reports_default_archive_policy(monkeypatch):
+    monkeypatch.setenv("AUTH_MODE", "pki")
     monkeypatch.delenv("ARCHIVED_SESSION_RETENTION_DAYS", raising=False)
     monkeypatch.delenv(
         "ARCHIVED_SESSION_CLEANUP_INTERVAL_MINUTES",
@@ -38,6 +39,11 @@ async def test_health_reports_default_archive_policy(monkeypatch):
             "retentionDays": 30.0,
             "cleanupIntervalMinutes": 360.0,
         },
+        "authentication": {
+            "mode": "pki",
+            "ready": False,
+            "reason": "PKI_NOT_CONFIGURED",
+        },
     }
 
 
@@ -45,6 +51,7 @@ async def test_health_reports_default_archive_policy(monkeypatch):
 async def test_health_reports_configured_archive_policy_without_unrelated_values(
     monkeypatch,
 ):
+    monkeypatch.setenv("AUTH_MODE", "pki")
     unrelated_value = "must-not-leak"
     monkeypatch.setenv("ARCHIVED_SESSION_RETENTION_DAYS", "12.5")
     monkeypatch.setenv("ARCHIVED_SESSION_CLEANUP_INTERVAL_MINUTES", "7.25")
@@ -58,6 +65,11 @@ async def test_health_reports_configured_archive_policy_without_unrelated_values
         "archivePolicy": {
             "retentionDays": 12.5,
             "cleanupIntervalMinutes": 7.25,
+        },
+        "authentication": {
+            "mode": "pki",
+            "ready": False,
+            "reason": "PKI_NOT_CONFIGURED",
         },
     }
     assert unrelated_value not in response.text

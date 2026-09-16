@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite --config vite.config.ts --host 0.0.0.0",
     "build": "vite build --config vite.config.ts",
+    "build:pki": "AUTH_MODE=pki VITE_AUTH_MODE=pki NODE_ENV=production vite build --config vite.config.ts",
+    "test:pki-build": "node ./scripts/verify-pki-build.mjs",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config vitest.config.ts",

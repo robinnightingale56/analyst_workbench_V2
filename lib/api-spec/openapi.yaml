@@ -23,7 +23,7 @@ paths:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
+      description: Returns server liveness, archive policy, and non-secret authentication readiness. Liveness remains OK while PKI is intentionally unready.
       responses:
         "200":
           description: Healthy
@@ -37,6 +37,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthDegraded"
+  /auth-mode:
+    get:
+      security: []
+      operationId: getAuthMode
+      tags: [health]
+      summary: Authentication mode readiness
+      description: Returns the non-secret configured authentication mode and whether it is ready to admit protected API traffic.
+      responses:
+        "200":
+          description: Authentication mode and readiness
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthReadiness"
   /analysis-sessions:
     get:
       operationId: listAnalysisSessions
@@ -246,7 +260,7 @@ components:
       type: apiKey
       in: cookie
       name: __session
-      description: Clerk same-origin browser session cookie.
+      description: Clerk same-origin browser session cookie used only when AUTH_MODE is clerk. PKI mode is intentionally unready and does not accept this cookie.
   parameters:
     SessionId:
       name: sessionId
@@ -271,9 +285,25 @@ components:
           required:
             - retentionDays
             - cleanupIntervalMinutes
+        authentication:
+          $ref: "#/components/schemas/AuthReadiness"
       required:
         - status
         - archivePolicy
+        - authentication
+    AuthReadiness:
+      type: object
+      additionalProperties: false
+      required: [mode, ready]
+      properties:
+        mode:
+          type: string
+          enum: [clerk, pki, invalid]
+        ready:
+          type: boolean
+        reason:
+          type: string
+          enum: [CLERK_NOT_CONFIGURED, PKI_NOT_CONFIGURED, AUTH_MODE_INVALID]
     HealthDegraded:
       type: object
       additionalProperties: false

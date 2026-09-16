@@ -9,7 +9,7 @@ import * as zod from 'zod';
 
 
 /**
- * Returns server health status
+ * Returns server liveness, archive policy, and non-secret authentication readiness. Liveness remains OK while PKI is intentionally unready.
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({
@@ -17,7 +17,23 @@ export const HealthCheckResponse = zod.object({
   "archivePolicy": zod.object({
   "retentionDays": zod.number(),
   "cleanupIntervalMinutes": zod.number()
+}),
+  "authentication": zod.object({
+  "mode": zod.enum(['clerk', 'pki', 'invalid']),
+  "ready": zod.boolean(),
+  "reason": zod.enum(['CLERK_NOT_CONFIGURED', 'PKI_NOT_CONFIGURED', 'AUTH_MODE_INVALID']).optional()
 })
+})
+
+
+/**
+ * Returns the non-secret configured authentication mode and whether it is ready to admit protected API traffic.
+ * @summary Authentication mode readiness
+ */
+export const GetAuthModeResponse = zod.object({
+  "mode": zod.enum(['clerk', 'pki', 'invalid']),
+  "ready": zod.boolean(),
+  "reason": zod.enum(['CLERK_NOT_CONFIGURED', 'PKI_NOT_CONFIGURED', 'AUTH_MODE_INVALID']).optional()
 })
 
 

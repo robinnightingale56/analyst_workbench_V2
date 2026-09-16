@@ -42,7 +42,8 @@ ARCHIVED_SESSION_RETENTION_DAYS
 ARCHIVED_SESSION_CLEANUP_INTERVAL_MINUTES
 ```
 
-Clerk authentication is enabled for the Analyst Workbench. Replit provisions
+Authentication defaults to `AUTH_MODE=clerk`, preserving the current Clerk
+development login. Replit provisions
 `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, and
 `VITE_CLERK_PUBLISHABLE_KEY`; do not add them to an environment file. The API
 derives its trusted Clerk issuer/JWKS URL from the provisioned publishable key,
@@ -57,14 +58,23 @@ comma-separated list of complete trusted browser origins when self-hosting
 use the provisioned `REPLIT_DOMAINS` origin list. The same trusted-origin set
 validates Clerk's `azp` claim, browser `Origin` on mutations, CORS when needed,
 and the public host used by the Clerk proxy. The production platform injects
-`VITE_CLERK_PROXY_URL` during the web build; keep the canonical unconditional
-`proxyUrl` wiring in the client and do not hardcode, gate, or replace it.
+`VITE_CLERK_PROXY_URL` during Clerk web builds; keep the canonical `proxyUrl`
+wiring in the legacy Clerk client and do not hardcode or replace it.
+
+`AUTH_MODE=pki` is an intentionally blocked PKI-readiness posture, not
+certificate authentication: protected routes return `503 PKI_NOT_CONFIGURED`
+and the browser shows deployment guidance only. It never falls back to Clerk
+cookies or identity headers. The Vite build derives `VITE_AUTH_MODE` from the
+same `AUTH_MODE` and rejects a conflict. See
+[PKI deployment requirements](docs/PKI-DEPLOYMENT.md) before considering a PKI
+deployment.
 
 ### Analysis-session ownership migration
 
 `analysis_sessions.owner_id` is added idempotently at API initialization.
-New user-created rows require a nonblank Clerk user ID and are queried and
-updated with that owner ID. Existing rows are preserved but remain unassigned:
+New user-created rows require a nonblank trusted-principal ID (the current
+Clerk user ID) and are queried and updated with that owner ID. Existing rows
+are preserved but remain unassigned:
 on PostgreSQL they are marked `LEGACY_UNASSIGNED`; on SQLite their null
 `owner_id` makes them invisible to every user. They are deliberately not
 claimed by the first person to sign in. The migration creates the

@@ -65,6 +65,11 @@ def test_derives_trusted_issuer_from_provisioned_publishable_key(monkeypatch):
     assert auth._issuer() == f"https://{hostname}"
 
 
+def test_auth_mode_defaults_to_legacy_clerk(monkeypatch):
+    monkeypatch.delenv("AUTH_MODE", raising=False)
+    assert auth.auth_mode() == "clerk"
+
+
 @pytest.fixture
 async def client():
     async with app.router.lifespan_context(app):
@@ -82,6 +87,46 @@ async def test_data_routes_reject_anonymous_requests(client):
     assert response.status_code == 401
     # Health remains an intentionally unauthenticated deployment health check.
     assert (await client.get("/api/healthz")).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_pki_mode_rejects_clerk_cookie_and_identity_header_without_fallback(client, clerk_tokens, monkeypatch):
+    monkeypatch.setenv("AUTH_MODE", "pki")
+    client.cookies.set("__session", clerk_tokens("user_123"))
+    response = await client.get(
+        "/api/analysis-sessions",
+        headers={"X-Clerk-User-Id": "user_attacker", "X-Remote-User": "user_attacker"},
+    )
+    assert response.status_code == 503
+    assert response.json() == {"detail": "PKI_NOT_CONFIGURED"}
+    # Writes must not disclose origin-validation behavior before PKI is ready.
+    write = await client.post(
+        "/api/analysis-sessions",
+        headers={"Origin": "https://attacker.example", "X-Remote-User": "user_attacker"},
+        json={"prompt": "Spoofed principal must not create a session"},
+    )
+    assert write.status_code == 503
+    assert write.json() == {"detail": "PKI_NOT_CONFIGURED"}
+    proxy = await client.get("/api/__clerk/v1/environment")
+    assert proxy.status_code == 404
+    assert (await client.get("/api/healthz")).json()["authentication"] == {
+        "mode": "pki",
+        "ready": False,
+        "reason": "PKI_NOT_CONFIGURED",
+    }
+
+
+@pytest.mark.asyncio
+async def test_invalid_auth_mode_fails_closed(client, monkeypatch):
+    monkeypatch.setenv("AUTH_MODE", "not-a-provider")
+    response = await client.get("/api/analysis-sessions")
+    assert response.status_code == 503
+    assert response.json() == {"detail": "AUTH_MODE_INVALID"}
+    assert (await client.get("/api/auth-mode")).json() == {
+        "mode": "invalid",
+        "ready": False,
+        "reason": "AUTH_MODE_INVALID",
+    }
 
 
 @pytest.mark.asyncio

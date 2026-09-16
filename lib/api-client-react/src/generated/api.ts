@@ -25,6 +25,7 @@ import type {
   AnalysisSessionInput,
   AnalysisStarters,
   AssessmentInput,
+  AuthReadiness,
   ErrorResponse,
   EvaluationVectorDefinition,
   HealthDegraded,
@@ -72,7 +73,7 @@ export const getHealthCheckUrl = () => {
 }
 
 /**
- * Returns server health status
+ * Returns server liveness, archive policy, and non-secret authentication readiness. Liveness remains OK while PKI is intentionally unready.
  * @summary Health check
  */
 export const healthCheck = async ( options?: Parameters<typeof customFetch>[1]): Promise<HealthStatus> => {
@@ -129,6 +130,84 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getHealthCheckQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetAuthModeUrl = () => {
+
+
+
+
+  return `/api/auth-mode`
+}
+
+/**
+ * Returns the non-secret configured authentication mode and whether it is ready to admit protected API traffic.
+ * @summary Authentication mode readiness
+ */
+export const getAuthMode = async ( options?: Parameters<typeof customFetch>[1]): Promise<AuthReadiness> => {
+
+  return customFetch<AuthReadiness>(getGetAuthModeUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAuthModeQueryKey = () => {
+    return [
+    `/api/auth-mode`
+    ] as const;
+    }
+
+
+export const getGetAuthModeQueryOptions = <TData = Awaited<ReturnType<typeof getAuthMode>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAuthMode>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAuthModeQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAuthMode>>> = ({ signal }) => getAuthMode({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAuthMode>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAuthModeQueryResult = NonNullable<Awaited<ReturnType<typeof getAuthMode>>>
+export type GetAuthModeQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Authentication mode readiness
+ */
+
+export function useGetAuthMode<TData = Awaited<ReturnType<typeof getAuthMode>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAuthMode>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAuthModeQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

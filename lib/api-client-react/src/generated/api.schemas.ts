@@ -10,9 +10,34 @@ export type HealthStatusArchivePolicy = {
   cleanupIntervalMinutes: number;
 };
 
+export type AuthReadinessMode = typeof AuthReadinessMode[keyof typeof AuthReadinessMode];
+
+
+export const AuthReadinessMode = {
+  clerk: 'clerk',
+  pki: 'pki',
+  invalid: 'invalid',
+} as const;
+
+export type AuthReadinessReason = typeof AuthReadinessReason[keyof typeof AuthReadinessReason];
+
+
+export const AuthReadinessReason = {
+  CLERK_NOT_CONFIGURED: 'CLERK_NOT_CONFIGURED',
+  PKI_NOT_CONFIGURED: 'PKI_NOT_CONFIGURED',
+  AUTH_MODE_INVALID: 'AUTH_MODE_INVALID',
+} as const;
+
+export interface AuthReadiness {
+  mode: AuthReadinessMode;
+  ready: boolean;
+  reason?: AuthReadinessReason;
+}
+
 export interface HealthStatus {
   status: string;
   archivePolicy: HealthStatusArchivePolicy;
+  authentication: AuthReadiness;
 }
 
 export const HealthDegradedValue = {

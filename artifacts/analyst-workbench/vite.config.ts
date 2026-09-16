@@ -6,9 +6,13 @@ import { defineConfig } from 'vite';
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
 
 import { createVitePortConfig } from '../../vite-port-config';
+import { resolveAuthMode } from './src/auth-mode';
+
+export { type AuthMode, resolveAuthMode } from './src/auth-mode';
 
 export async function createViteConfig(env: NodeJS.ProcessEnv) {
   const basePath = env.BASE_PATH ?? '/';
+  const authMode = resolveAuthMode(env);
   const portConfig = createVitePortConfig(env.PORT, {
     strictPortWhenUnset: true,
   });
@@ -34,6 +38,13 @@ export async function createViteConfig(env: NodeJS.ProcessEnv) {
     ],
     resolve: {
       alias: {
+        // Select an entry before the browser can import or initialize Clerk.
+        // PKI builds therefore have no Clerk provider dependency at runtime.
+        '@auth-entry': path.resolve(
+          import.meta.dirname,
+          'src',
+          authMode === 'clerk' ? 'ClerkEntry.tsx' : 'PkiApp.tsx',
+        ),
         '@': path.resolve(import.meta.dirname, 'src'),
         '@assets': path.resolve(
           import.meta.dirname,
@@ -48,6 +59,11 @@ export async function createViteConfig(env: NodeJS.ProcessEnv) {
     build: {
       outDir: path.resolve(import.meta.dirname, 'dist/public'),
       emptyOutDir: true,
+    },
+    define: {
+      // The public value is derived from the server-side mode that invoked the
+      // build. An explicitly conflicting VITE_AUTH_MODE fails above.
+      'import.meta.env.VITE_AUTH_MODE': JSON.stringify(authMode),
     },
     server: {
       ...portConfig,
