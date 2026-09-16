@@ -38,41 +38,76 @@ const pnpmShim = path.join(temporaryDirectory, "pnpm");
 try {
   await writeFile(
     pnpmShim,
-    '#!/bin/sh\nprintf "%s\\n" "$*" >> "$WEB_PORT_INVOCATION_LOG"\n',
+    `#!/bin/sh
+printf "%s\\n" "$*" >> "$WEB_PORT_INVOCATION_LOG"
+case "$*" in
+  "${expectedCommands[0].command}") exit "$WEB_PORT_ANALYST_STATUS" ;;
+  "${expectedCommands[1].command}") exit "$WEB_PORT_CANVAS_STATUS" ;;
+  *) echo "Unexpected pnpm command: $*" >&2; exit 99 ;;
+esac
+`,
   );
   await chmod(pnpmShim, 0o755);
 
-  const result = spawnSync(coordinator, {
-    cwd: workspaceRoot,
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      PATH: `${temporaryDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
-      WEB_PORT_INVOCATION_LOG: invocationLog,
-    },
-    shell: true,
-  });
+  const scenarios = [
+    { name: "both pass", analystStatus: 0, canvasStatus: 0 },
+    { name: "Analyst Workbench fails", analystStatus: 17, canvasStatus: 0 },
+    { name: "Canvas fails", analystStatus: 0, canvasStatus: 23 },
+    { name: "both fail", analystStatus: 17, canvasStatus: 23 },
+  ];
 
-  assert.equal(
-    result.status,
-    0,
-    `Root package script "${coordinatorName}" failed under the controlled port-suite runner:\n${result.stderr}`,
-  );
+  for (const { name, analystStatus, canvasStatus } of scenarios) {
+    await writeFile(invocationLog, "");
+    const result = spawnSync(coordinator, {
+      cwd: workspaceRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${temporaryDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
+        WEB_PORT_INVOCATION_LOG: invocationLog,
+        WEB_PORT_ANALYST_STATUS: String(analystStatus),
+        WEB_PORT_CANVAS_STATUS: String(canvasStatus),
+      },
+      shell: true,
+      timeout: 10_000,
+    });
+    const context = `${coordinatorName} (${name}):\n${result.stdout}\n${result.stderr}`;
+    assert.ifError(result.error);
+    assert.equal(result.signal, null, context);
+    assert.notEqual(result.status, null, context);
 
-  const invocations = (await readFile(invocationLog, "utf8"))
-    .trim()
-    .split("\n");
-
-  for (const { artifact, command } of expectedCommands) {
-    assert.ok(
-      invocations.includes(command),
-      `${artifact} port suite is missing from root package script "${coordinatorName}"; expected pnpm ${command}`,
+    const invocations = (await readFile(invocationLog, "utf8"))
+      .trim()
+      .split("\n");
+    assert.deepEqual(
+      invocations,
+      expectedCommands.map(({ command }) => command),
+      `Both suites must run exactly once, in order: ${context}`,
     );
+
+    for (const { artifact } of expectedCommands) {
+      assert.ok(
+        result.stdout.includes(`${artifact} port contract:`),
+        `Missing ${artifact} suite heading: ${context}`,
+      );
+    }
+
+    if (analystStatus === 0 && canvasStatus === 0) {
+      assert.equal(result.status, 0, context);
+    } else {
+      assert.notEqual(result.status, 0, context);
+      assert.ok(
+        result.stderr.includes(
+          `Web port contract validation failed (Analyst Workbench: ${analystStatus}; Canvas: ${canvasStatus}).`,
+        ),
+        `Failure summary must report both suite statuses: ${context}`,
+      );
+    }
   }
 } finally {
   await rm(temporaryDirectory, { recursive: true, force: true });
 }
 
 console.log(
-  `Root package script "${coordinatorName}" runs both web port suites.`,
+  `Root package script "${coordinatorName}" runs both web port suites and reports independent and combined failures.`,
 );
