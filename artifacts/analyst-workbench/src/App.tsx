@@ -1,5 +1,8 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ClerkProvider, Show, SignIn, SignUp, useAuth, useClerk, useUser } from '@clerk/react';
+import { publishableKeyFromHost } from '@clerk/react/internal';
+import { shadcn } from '@clerk/themes';
 import {
   Activity,
   ArrowUpRight,
@@ -56,16 +59,82 @@ import {
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { Link, Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
+import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
 import NotFound from '@/pages/not-found';
 
 const queryClient = new QueryClient();
+const clerkPubKey = publishableKeyFromHost(
+  window.location.hostname,
+  import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
+);
+const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
+const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
+
+if (!clerkPubKey) {
+  throw new Error('Missing VITE_CLERK_PUBLISHABLE_KEY in .env file');
+}
+
+const clerkAppearance = {
+  theme: shadcn,
+  cssLayerName: 'clerk',
+  options: {
+    logoPlacement: 'inside' as const,
+    logoLinkUrl: basePath || '/',
+    logoImageUrl: `${window.location.origin}${basePath}/logo.svg`,
+    socialButtonsPlacement: 'bottom' as const,
+  },
+  variables: {
+    colorPrimary: 'hsl(222, 38%, 22%)',
+    colorForeground: 'hsl(222, 32%, 18%)',
+    colorMutedForeground: 'hsl(218, 13%, 38%)',
+    colorDanger: 'hsl(5, 69%, 42%)',
+    colorBackground: 'hsl(0, 0%, 100%)',
+    colorInput: 'hsl(0, 0%, 100%)',
+    colorInputForeground: 'hsl(222, 32%, 18%)',
+    colorNeutral: 'hsl(220, 18%, 76%)',
+    fontFamily: 'DM Sans, sans-serif',
+    borderRadius: '0.4rem',
+  },
+  elements: {
+    rootBox: 'w-full flex justify-center',
+    cardBox: 'w-[440px] max-w-full overflow-hidden border border-slate-200 bg-white shadow-2xl',
+    card: '!border-0 !bg-transparent !shadow-none !rounded-none',
+    footer: '!border-0 !bg-transparent !shadow-none',
+    headerTitle: 'font-semibold text-slate-900',
+    headerSubtitle: 'text-slate-600',
+    socialButtonsBlockButtonText: 'text-slate-800',
+    formFieldLabel: 'text-slate-800',
+    footerActionLink: 'font-semibold text-slate-900',
+    footerActionText: 'text-slate-600',
+    dividerText: 'text-slate-500',
+    identityPreviewEditButton: 'text-slate-800',
+    formFieldSuccessText: 'text-emerald-700',
+    alertText: 'text-slate-800',
+    logoBox: 'mb-2',
+    logoImage: 'h-10 w-10',
+    socialButtonsBlockButton: 'border border-slate-300 bg-white hover:bg-slate-50',
+    formButtonPrimary: 'bg-slate-900 hover:bg-slate-800 text-white',
+    formFieldInput: 'border-slate-300 bg-white text-slate-900',
+    footerAction: 'border-t border-slate-200',
+    dividerLine: 'bg-slate-200',
+    alert: 'border border-slate-200 bg-slate-50',
+    otpCodeFieldInput: 'border-slate-300 text-slate-900',
+    formFieldRow: 'gap-1.5',
+    main: 'gap-5',
+  },
+};
+
+function stripBase(path: string): string {
+  return basePath && path.startsWith(basePath)
+    ? path.slice(basePath.length) || '/'
+    : path;
+}
 
 const navItems = [
-  { href: '/', label: 'Workbench', icon: Target },
-  { href: '/sessions', label: 'Sessions', icon: Layers3 },
-  { href: '/standards', label: 'ICD-203 standards', icon: BookOpen },
-  { href: '/settings', label: 'Settings', icon: Settings2 },
+  { href: '/user-portal', label: 'Workbench', icon: Target },
+  { href: '/user-portal/sessions', label: 'Sessions', icon: Layers3 },
+  { href: '/user-portal/standards', label: 'ICD-203 standards', icon: BookOpen },
+  { href: '/user-portal/settings', label: 'Settings', icon: Settings2 },
 ];
 
 const standards: AnalyticStandard[] = [
@@ -118,10 +187,25 @@ function EmptyState({ icon: Icon, title, detail, action }: { icon: typeof FileTe
   </div>;
 }
 
+function LogoutButton() {
+  const { signOut } = useClerk();
+  const signOutOfWorkbench = async () => {
+    // The cache can hold user-scoped research records. Clear it before Clerk
+    // removes the cookie so a subsequent account cannot see stale results.
+    await queryClient.cancelQueries();
+    queryClient.clear();
+    await signOut({ redirectUrl: basePath || '/' });
+  };
+  return <button type="button" onClick={signOutOfWorkbench} className="mono text-[10px] uppercase tracking-[0.12em] text-sidebar-foreground/55 hover:text-white" data-testid="button-logout">Sign out</button>;
+}
+
 function AppShell({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { user } = useUser();
   const activePath = location.split('?')[0];
+  const analystName = user?.fullName || user?.firstName || 'Analyst';
+  const analystInitials = analystName.split(/\s+/).filter(Boolean).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'AN';
   return <div className="workbench-shell min-h-[100dvh] text-foreground">
     <aside className={`${mobileOpen ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-30 flex w-[250px] flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-transform duration-200 md:translate-x-0`} data-testid="sidebar">
       <div className="flex h-[72px] items-center gap-3 border-b border-sidebar-border px-5">
@@ -141,7 +225,7 @@ function AppShell({ children }: { children: ReactNode }) {
           <div className="flex items-center gap-2"><span className="h-1.5 w-1.5 bg-[hsl(174_55%_55%)]" /><span className="mono text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/80">Environment nominal</span></div>
           <p className="mt-2 text-xs leading-5 text-sidebar-foreground/55">Classification is tracked per session for organizational purposes.</p>
         </div>
-        <div className="flex items-center gap-3 border-t border-sidebar-border pt-4"><div className="grid h-8 w-8 place-items-center rounded-full bg-[hsl(39_92%_65%_/_0.2)] mono text-xs font-medium text-sidebar-primary">AR</div><div><div className="text-xs font-semibold text-white">A. Reyes</div><div className="mono text-[10px] text-sidebar-foreground/50">All-source analyst</div></div><button onClick={() => setLocation('/settings')} className="ml-auto text-sidebar-foreground/50 hover:text-white" data-testid="button-profile-settings" aria-label="Open settings"><Settings2 size={15} /></button></div>
+        <div className="flex items-center gap-3 border-t border-sidebar-border pt-4"><div className="grid h-8 w-8 place-items-center rounded-full bg-[hsl(39_92%_65%_/_0.2)] mono text-xs font-medium text-sidebar-primary">{analystInitials}</div><div className="min-w-0"><div className="truncate text-xs font-semibold text-white">{analystName}</div><div className="truncate mono text-[10px] text-sidebar-foreground/50">{user?.primaryEmailAddress?.emailAddress ?? 'Authenticated analyst'}</div></div><div className="ml-auto flex items-center gap-2"><button onClick={() => setLocation('/user-portal/settings')} className="text-sidebar-foreground/50 hover:text-white" data-testid="button-profile-settings" aria-label="Open settings"><Settings2 size={15} /></button><LogoutButton /></div></div>
       </div>
     </aside>
     {mobileOpen ? <button className="fixed inset-0 z-20 bg-[hsl(222_38%_15%_/_0.48)] md:hidden" onClick={() => setMobileOpen(false)} aria-label="Close navigation" data-testid="button-close-navigation" /> : null}
@@ -241,7 +325,7 @@ function Home() {
         setCreatedSession(nextSession);
         setActiveSessionId(nextSession.id);
         setResearchResult(null);
-        setLocation(`/?session=${nextSession.id}`);
+        setLocation(`/user-portal?session=${nextSession.id}`);
         runResearch.mutate(
           { sessionId: nextSession.id, data: { sourceConnectorIds: selectedConnectors, maxResults: 12 } },
           {
@@ -624,7 +708,7 @@ function AssessmentSummary({ session, onUpdated }: { session: AnalysisSession; o
 function SessionsPage() {
   const sessionsQuery = useListAnalysisSessions();
   const [, setLocation] = useLocation();
-  return <div className="space-y-7"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><div className="section-kicker">Production history</div><h1 className="display mt-2 text-3xl font-bold tracking-tight">Recent sessions</h1><p className="mt-2 text-sm text-muted-foreground">Every question, source run, and assessment stays attributable to its originating session.</p></div><Link href="/" className="inline-flex items-center gap-2 self-start bg-primary px-3.5 py-2.5 text-sm font-semibold text-primary-foreground" data-testid="link-new-session"><Plus size={15} /> New session</Link></div><div className="flex flex-wrap items-center gap-2 border-y border-border/70 py-3 text-xs text-muted-foreground"><Search size={14} /><span>Showing latest workspace activity</span><span className="ml-auto mono">{sessionsQuery.data?.length ?? 0} records</span></div>{sessionsQuery.isLoading ? <LoadingRows count={5} /> : sessionsQuery.error ? <div className="border border-[hsl(5_69%_48%_/_0.25)] bg-card p-6" data-testid="error-sessions"><CircleAlert className="text-[hsl(5_69%_48%)]" size={18} /><h3 className="mt-3 font-semibold">Sessions could not be loaded</h3><p className="mt-1 text-sm text-muted-foreground">The workspace history service did not respond. Retry from the browser when the API is available.</p></div> : sessionsQuery.data?.length ? <div className="overflow-x-auto border border-border bg-card"><table className="w-full min-w-[760px] text-left"><thead className="border-b border-border bg-muted/60"><tr className="mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground"><th className="px-5 py-3 font-medium">Question</th><th className="px-4 py-3 font-medium">Analyst</th><th className="px-4 py-3 font-medium">Created</th><th className="px-4 py-3 font-medium">Sources</th><th className="px-4 py-3 font-medium">Status</th><th className="px-4 py-3" /></tr></thead><tbody>{sessionsQuery.data.map((item) => <tr className="border-b border-border/70 last:border-0 hover:bg-muted/35" key={item.id} data-testid={`row-session-${item.id}`}><td className="max-w-[430px] px-5 py-4"><div className="line-clamp-2 text-sm font-semibold text-foreground">{item.prompt}</div><div className="mono mt-1 text-[10px] text-muted-foreground">{item.classification}</div></td><td className="px-4 py-4 text-sm text-muted-foreground">{item.analyst}</td><td className="px-4 py-4 text-xs text-muted-foreground">{formatDateTime(item.createdAt)}</td><td className="px-4 py-4 mono text-xs text-muted-foreground">{item.sourceFiles.length.toString().padStart(2, '0')}</td><td className="px-4 py-4"><StatusPill status={item.status} /></td><td className="px-4 py-4 text-right"><button onClick={() => setLocation(`/?session=${item.id}`)} className="inline-flex items-center gap-1 text-xs font-semibold text-[hsl(174_44%_32%)] hover:underline" data-testid={`button-open-session-${item.id}`}>Open <ArrowUpRight size={13} /></button></td></tr>)}</tbody></table></div> : <EmptyState icon={Clock3} title="No analysis sessions yet" detail="Your completed and in-progress questions will appear here." action={<Link href="/" className="inline-flex items-center gap-2 bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground" data-testid="link-start-first-session"><Plus size={14} /> Start first session</Link>} />}</div>;
+  return <div className="space-y-7"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><div className="section-kicker">Production history</div><h1 className="display mt-2 text-3xl font-bold tracking-tight">Recent sessions</h1><p className="mt-2 text-sm text-muted-foreground">Every question, source run, and assessment stays attributable to its originating session.</p></div><Link href="/user-portal" className="inline-flex items-center gap-2 self-start bg-primary px-3.5 py-2.5 text-sm font-semibold text-primary-foreground" data-testid="link-new-session"><Plus size={15} /> New session</Link></div><div className="flex flex-wrap items-center gap-2 border-y border-border/70 py-3 text-xs text-muted-foreground"><Search size={14} /><span>Showing latest workspace activity</span><span className="ml-auto mono">{sessionsQuery.data?.length ?? 0} records</span></div>{sessionsQuery.isLoading ? <LoadingRows count={5} /> : sessionsQuery.error ? <div className="border border-[hsl(5_69%_48%_/_0.25)] bg-card p-6" data-testid="error-sessions"><CircleAlert className="text-[hsl(5_69%_48%)]" size={18} /><h3 className="mt-3 font-semibold">Sessions could not be loaded</h3><p className="mt-1 text-sm text-muted-foreground">The workspace history service did not respond. Retry from the browser when the API is available.</p></div> : sessionsQuery.data?.length ? <div className="overflow-x-auto border border-border bg-card"><table className="w-full min-w-[760px] text-left"><thead className="border-b border-border bg-muted/60"><tr className="mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground"><th className="px-5 py-3 font-medium">Question</th><th className="px-4 py-3 font-medium">Analyst</th><th className="px-4 py-3 font-medium">Created</th><th className="px-4 py-3 font-medium">Sources</th><th className="px-4 py-3 font-medium">Status</th><th className="px-4 py-3" /></tr></thead><tbody>{sessionsQuery.data.map((item) => <tr className="border-b border-border/70 last:border-0 hover:bg-muted/35" key={item.id} data-testid={`row-session-${item.id}`}><td className="max-w-[430px] px-5 py-4"><div className="line-clamp-2 text-sm font-semibold text-foreground">{item.prompt}</div><div className="mono mt-1 text-[10px] text-muted-foreground">{item.classification}</div></td><td className="px-4 py-4 text-sm text-muted-foreground">{item.analyst}</td><td className="px-4 py-4 text-xs text-muted-foreground">{formatDateTime(item.createdAt)}</td><td className="px-4 py-4 mono text-xs text-muted-foreground">{item.sourceFiles.length.toString().padStart(2, '0')}</td><td className="px-4 py-4"><StatusPill status={item.status} /></td><td className="px-4 py-4 text-right"><button onClick={() => setLocation(`/user-portal?session=${item.id}`)} className="inline-flex items-center gap-1 text-xs font-semibold text-[hsl(174_44%_32%)] hover:underline" data-testid={`button-open-session-${item.id}`}>Open <ArrowUpRight size={13} /></button></td></tr>)}</tbody></table></div> : <EmptyState icon={Clock3} title="No analysis sessions yet" detail="Your completed and in-progress questions will appear here." action={<Link href="/user-portal" className="inline-flex items-center gap-2 bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground" data-testid="link-start-first-session"><Plus size={14} /> Start first session</Link>} />}</div>;
 }
 
 function StandardsPage() {
@@ -700,13 +784,93 @@ function SettingsPage() {
   </div>;
 }
 
-function Router() {
+function PortalRouter() {
   const [location] = useLocation();
-  return <ErrorBoundary resetKey={location}><AppShell><Switch><Route path="/" component={Home} /><Route path="/sessions" component={SessionsPage} /><Route path="/standards" component={StandardsPage} /><Route path="/settings" component={SettingsPage} /><Route component={NotFound} /></Switch></AppShell></ErrorBoundary>;
+  return <ErrorBoundary resetKey={location}><AppShell><Switch><Route path="/user-portal" component={Home} /><Route path="/user-portal/sessions" component={SessionsPage} /><Route path="/user-portal/standards" component={StandardsPage} /><Route path="/user-portal/settings" component={SettingsPage} /><Route component={NotFound} /></Switch></AppShell></ErrorBoundary>;
+}
+
+function LandingPage() {
+  return <main className="min-h-[100dvh] overflow-hidden bg-[hsl(222_38%_15%)] text-white">
+    <div className="absolute inset-0 opacity-30 workbench-grid" />
+    <div className="relative mx-auto flex min-h-[100dvh] max-w-6xl flex-col px-6 py-6 md:px-10">
+      <header className="flex items-center justify-between border-b border-white/10 pb-5">
+        <Link href="/" className="flex items-center gap-3" aria-label="Analyst Workbench home">
+          <img src={`${basePath}/logo.svg`} className="h-9 w-9" alt="" />
+          <span><span className="display block text-lg font-bold tracking-tight">Analyst Workbench</span><span className="mono block text-[9px] uppercase tracking-[0.16em] text-white/50">Evidence-led production</span></span>
+        </Link>
+        <div className="flex items-center gap-3">
+          <Link href="/sign-in" className="px-3 py-2 text-sm font-semibold text-white/75 transition hover:text-white" data-testid="link-sign-in">Sign in</Link>
+          <Link href="/sign-up" className="bg-[hsl(39_92%_65%)] px-4 py-2 text-sm font-bold text-[hsl(222_38%_15%)] transition hover:bg-[hsl(39_92%_72%)]" data-testid="link-sign-up">Request access</Link>
+        </div>
+      </header>
+      <section className="grid flex-1 items-center gap-12 py-16 lg:grid-cols-[1.2fr_.8fr]">
+        <div>
+          <div className="mono inline-flex items-center gap-2 border border-[hsl(174_44%_52%_/_0.45)] bg-[hsl(174_44%_43%_/_0.12)] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[hsl(174_55%_68%)]"><ShieldCheck size={13} /> Analyst-controlled workflow</div>
+          <h1 className="display mt-6 max-w-3xl text-5xl font-bold leading-[1.02] tracking-[-0.05em] md:text-6xl">Turn a bounded question into a reviewable assessment.</h1>
+          <p className="mt-6 max-w-2xl text-lg leading-8 text-white/68">Analyst Workbench structures source collection, evidence selection, and ICD-203 tradecraft review so every provisional judgment stays traceable to its supporting material.</p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link href="/sign-up" className="inline-flex items-center gap-2 bg-[hsl(39_92%_65%)] px-5 py-3 text-sm font-bold text-[hsl(222_38%_15%)] transition hover:-translate-y-0.5" data-testid="link-landing-create-account">Create your account <ArrowUpRight size={16} /></Link>
+            <Link href="/sign-in" className="inline-flex items-center gap-2 border border-white/20 px-5 py-3 text-sm font-semibold text-white transition hover:border-white/50">Continue to workspace <ChevronRight size={16} /></Link>
+          </div>
+          <p className="mono mt-6 text-[10px] uppercase tracking-[0.12em] text-white/42">UNCLASSIFIED / Internal workflow tool</p>
+        </div>
+        <div className="border border-white/12 bg-white/[0.055] p-5 shadow-2xl backdrop-blur md:p-7">
+          <div className="flex items-center justify-between border-b border-white/10 pb-4"><span className="mono text-[10px] uppercase tracking-[0.14em] text-white/55">Production sequence</span><span className="h-2 w-2 bg-[hsl(174_44%_52%)]" /></div>
+          {[['01', 'Frame the question', 'Set scope, decision need, and classification posture.'], ['02', 'Review evidence', 'Collect and select source-backed material.'], ['03', 'Assess & review', 'Make provisional judgments visible and challengeable.']].map(([number, title, detail]) => <div className="flex gap-4 border-b border-white/10 py-5 last:border-0" key={number}><span className="mono text-sm text-[hsl(39_92%_65%)]">{number}</span><div><h2 className="font-semibold text-white">{title}</h2><p className="mt-1 text-sm leading-6 text-white/55">{detail}</p></div></div>)}
+        </div>
+      </section>
+      <footer className="flex flex-wrap justify-between gap-3 border-t border-white/10 pt-5 text-xs text-white/45"><span>Designed for disciplined analytic production.</span><span>Source-backed • Reviewable • Analyst accountable</span></footer>
+    </div>
+  </main>;
+}
+
+function SignInPage() {
+  return <div className="flex min-h-[100dvh] items-center justify-center bg-[hsl(222_24%_96%)] px-4"><SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} /></div>;
+}
+
+function SignUpPage() {
+  return <div className="flex min-h-[100dvh] items-center justify-center bg-[hsl(222_24%_96%)] px-4"><SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`} /></div>;
+}
+
+function HomeRedirect() {
+  const { isLoaded, isSignedIn } = useAuth();
+  // The public product page must remain useful while Clerk initializes (for
+  // example, on a slow first visit) rather than showing an empty viewport.
+  if (!isLoaded || !isSignedIn) return <LandingPage />;
+  return <Redirect to="/user-portal" />;
+}
+
+function ProtectedPortal() {
+  const { isLoaded, isSignedIn } = useAuth();
+  const { user } = useUser();
+  if (!isLoaded) return <div className="grid min-h-[100dvh] place-items-center bg-[hsl(222_24%_96%)]"><Loader2 className="animate-spin text-primary" aria-label="Loading workspace" /></div>;
+  if (!isSignedIn) return <Redirect to="/" />;
+  // A key forces all route and Home component state to remount if Clerk
+  // changes account in this browser context.
+  return <Show when="signed-in"><div key={user?.id ?? 'unknown-user'}><PortalRouter /></div></Show>;
+}
+
+function ClerkQueryClientCacheInvalidator() {
+  const { addListener } = useClerk();
+  const previousUserId = useRef<string | null | undefined>(undefined);
+  useEffect(() => addListener(({ user }) => {
+    const userId = user?.id ?? null;
+    if (previousUserId.current !== undefined && previousUserId.current !== userId) {
+      void queryClient.cancelQueries();
+      queryClient.clear();
+    }
+    previousUserId.current = userId;
+  }), [addListener]);
+  return null;
+}
+
+function ClerkProviderWithRoutes() {
+  const [, setLocation] = useLocation();
+  return <ClerkProvider publishableKey={clerkPubKey} proxyUrl={clerkProxyUrl} appearance={clerkAppearance} signInUrl={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} localization={{ signIn: { start: { title: 'Welcome back', subtitle: 'Sign in to access your analyst workspace' } }, signUp: { start: { title: 'Create your analyst workspace', subtitle: 'Start an evidence-led assessment workflow' } } }} routerPush={(to) => setLocation(stripBase(to))} routerReplace={(to) => setLocation(stripBase(to), { replace: true })}><QueryClientProvider client={queryClient}><ClerkQueryClientCacheInvalidator /><TooltipProvider><Switch><Route path="/" component={HomeRedirect} /><Route path="/sign-in/*?" component={SignInPage} /><Route path="/sign-up/*?" component={SignUpPage} /><Route path="/user-portal/*?" component={ProtectedPortal} /><Route component={NotFound} /></Switch><Toaster /></TooltipProvider></QueryClientProvider></ClerkProvider>;
 }
 
 function App() {
-  return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><Router /></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>;
+  return <WouterRouter base={basePath}><ClerkProviderWithRoutes /></WouterRouter>;
 }
 
 export default App;

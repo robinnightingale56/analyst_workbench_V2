@@ -12,8 +12,10 @@ _db_file = Path("/tmp/api-server-contracts.sqlite")
 _db_file.unlink(missing_ok=True)
 os.environ.pop("DATABASE_URL", None)
 os.environ["API_DATABASE_URL"] = f"sqlite:///{_db_file}"
+os.environ["ALLOWED_ORIGINS"] = "http://testserver"
 
 from api_server.engine import build_count_answer  # noqa: E402
+from api_server.auth import require_user  # noqa: E402
 from api_server.store import (  # noqa: E402
     AnalysisVersionConflictError,
     CONTRACT_TEST_PROVENANCE,
@@ -22,21 +24,31 @@ from api_server.store import (  # noqa: E402
     get_session,
     purge_stale_contract_fixtures,
 )
-from api_server.db import AnalysisSessionRow, SessionLocal, utcnow  # noqa: E402
+from api_server.db import AnalysisSessionRow, SessionLocal, init_db, utcnow  # noqa: E402
 from api_server.main import app  # noqa: E402
 from api_server.models import Incident  # noqa: E402
 from api_server.store import list_sessions  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def initialized_database():
+    # Store unit tests intentionally call persistence helpers directly, while
+    # application startup owns the production migration.
+    init_db()
+
+
 @pytest.fixture
 async def client():
     async with app.router.lifespan_context(app):
+        app.dependency_overrides[require_user] = lambda: "contract-test-user"
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
             transport=transport,
             base_url="http://testserver",
+            headers={"Origin": "http://testserver"},
         ) as async_client:
             yield async_client
+        app.dependency_overrides.pop(require_user, None)
 
 
 def _source(source_id: str, content: str) -> dict:
@@ -78,21 +90,21 @@ def test_count_excludes_unsupported_and_deduplicates_corroboration():
 
 
 def test_optimistic_version_compare_and_swap_rejects_stale_writer():
-    session = create_session("Assess the operating environment")
-    current = get_session(session["id"])
+    session = create_session("Assess the operating environment", owner_id="writer-test-user")
+    current = get_session(session["id"], owner_id="writer-test-user")
     assert current is not None
     first = dict(current)
     first["analyst"] = "writer one"
-    saved = _write(first, current["version"])
+    saved = _write(first, current["version"], owner_id="writer-test-user")
     stale = dict(current)
     stale["analyst"] = "writer two"
     try:
-        _write(stale, current["version"])
+        _write(stale, current["version"], owner_id="writer-test-user")
     except AnalysisVersionConflictError as exc:
         assert str(exc) == "Analysis session was updated by another request"
     else:
         raise AssertionError("stale writer unexpectedly succeeded")
-    assert get_session(session["id"])["analyst"] == "writer one"
+    assert get_session(session["id"], owner_id="writer-test-user")["analyst"] == "writer one"
     assert saved["version"] == current["version"] + 1
 
 
@@ -170,7 +182,7 @@ async def test_api_rejects_blank_contract_test_run_ids(run_id, client):
         },
     )
     assert response.status_code == 400
-    assert "provenance and runId are inconsistent" in response.json()["error"]
+    assert "Extra inputs are not permitted" in response.json()["error"]
 
 
 @pytest.mark.parametrize("run_id", ["", " \t\n "])
@@ -203,8 +215,27 @@ def test_database_rejects_contract_test_sessions_without_nonblank_run_id(run_id)
             db.add(row)
 
 
+def test_database_rejects_new_user_session_without_an_owner():
+    now = utcnow()
+    row = AnalysisSessionRow(
+        id="invalid-user-owner",
+        data={"prompt": "Reject missing user owner"},
+        provenance="USER",
+        run_id=None,
+        version=1,
+        created_at=now,
+        updated_at=now,
+    )
+    with pytest.raises(IntegrityError):
+        with SessionLocal.begin() as db:
+            db.add(row)
+
+
 def test_store_accepts_valid_ownership_metadata():
-    analyst_session = create_session("Accept analyst ownership metadata")
+    analyst_session = create_session(
+        "Accept analyst ownership metadata",
+        owner_id="ownership-test-user",
+    )
     contract_session = create_session(
         "Accept contract ownership metadata",
         provenance=CONTRACT_TEST_PROVENANCE,
@@ -289,7 +320,7 @@ def test_stale_fixture_cleanup_preserves_active_and_recent_runs():
 
 
 def test_session_listing_survives_cleanup_failure():
-    create_session("Assess cleanup isolation")
+    create_session("Assess cleanup isolation", owner_id="cleanup-test-user")
     with patch(
         "api_server.store.purge_expired_archived_sessions",
         side_effect=RuntimeError("cleanup unavailable"),

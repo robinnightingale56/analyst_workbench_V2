@@ -81,12 +81,10 @@ class AnalysisSession(BaseModel):
 
 
 class CreateSession(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
     prompt: str = Field(min_length=5, max_length=500)
     analyst: str | None = None
     classification: Classification | None = None
-    provenance: str | None = None
-    runId: str | None = None
 
 
 class ArchiveUpdate(BaseModel):

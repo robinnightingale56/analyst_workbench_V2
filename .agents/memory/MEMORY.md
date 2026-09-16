@@ -3,3 +3,4 @@
 - [PostgreSQL whitespace constraints](postgres-whitespace-constraints.md) — use POSIX whitespace checks, and rename changed Drizzle checks so schema push applies them.
 - [PostgreSQL contract isolation](postgres-contract-isolation.md) — destructive compatibility checks must run in a cloned temporary schema, never the shared development table.
 - [Canvas Vitest isolation](canvas-vitest-isolation.md) — Canvas tests need a dedicated Vitest config so required preview env checks do not block the test runner itself.
+- [Managed Clerk proxy review](managed-clerk-proxy.md) — an empty development proxy URL is intentional, not evidence of a missing production proxy.

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Analyst Workbench</title>
+  <rect width="64" height="64" fill="#17233b"/>
+  <path d="M13 17h38v30H13z" fill="none" stroke="#f7c95c" stroke-width="4"/>
+  <path d="M21 39V26h5.5l5.5 10 5.5-10H43v13" fill="none" stroke="#dce7f5" stroke-width="3.5" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path d="M16 47h32" stroke="#43a7a1" stroke-width="3"/>
+</svg>

@@ -42,6 +42,35 @@ ARCHIVED_SESSION_RETENTION_DAYS
 ARCHIVED_SESSION_CLEANUP_INTERVAL_MINUTES
 ```
 
+Clerk authentication is enabled for the Analyst Workbench. Replit provisions
+`CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, and
+`VITE_CLERK_PUBLISHABLE_KEY`; do not add them to an environment file. The API
+derives its trusted Clerk issuer/JWKS URL from the provisioned publishable key,
+so no additional issuer secret is required. `CLERK_JWT_ISSUER` is an optional
+HTTPS override for a custom instance and `CLERK_JWT_AUDIENCE` is optional when
+the instance issues an audience claim. Browser requests use the same-origin
+Clerk `__session` cookie — never add a browser bearer-token bridge.
+
+For cookie-authenticated writes, configure `ALLOWED_ORIGINS` with a
+comma-separated list of complete trusted browser origins when self-hosting
+(for example, `https://workbench.example`). Replit deployments automatically
+use the provisioned `REPLIT_DOMAINS` origin list. The same trusted-origin set
+validates Clerk's `azp` claim, browser `Origin` on mutations, CORS when needed,
+and the public host used by the Clerk proxy. The production platform injects
+`VITE_CLERK_PROXY_URL` during the web build; keep the canonical unconditional
+`proxyUrl` wiring in the client and do not hardcode, gate, or replace it.
+
+### Analysis-session ownership migration
+
+`analysis_sessions.owner_id` is added idempotently at API initialization.
+New user-created rows require a nonblank Clerk user ID and are queried and
+updated with that owner ID. Existing rows are preserved but remain unassigned:
+on PostgreSQL they are marked `LEGACY_UNASSIGNED`; on SQLite their null
+`owner_id` makes them invisible to every user. They are deliberately not
+claimed by the first person to sign in. The migration creates the
+owner/archive index without dropping data. Back up production databases before
+any schema migration as part of normal operational practice.
+
 Do not commit environment files, credentials, provider tokens, or database connection strings. Supply them through your local environment, GitHub Actions secrets, or Replit Secrets.
 
 ## Install

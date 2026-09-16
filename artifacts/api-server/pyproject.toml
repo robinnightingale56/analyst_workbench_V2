@@ -12,6 +12,7 @@ dependencies = [
   "sqlalchemy",
   "psycopg[binary]",
   "pydantic-settings",
+  "pyjwt[crypto]",
   "httpx",
   "trafilatura",
   "beautifulsoup4",

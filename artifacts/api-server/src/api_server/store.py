@@ -4,13 +4,20 @@ import logging
 from uuid import uuid4
 from sqlalchemy import delete, select, update
 from .config import get_settings
-from .db import AnalysisSessionRow, SessionLocal, init_db, utcnow
+from .db import (
+    AnalysisSessionRow,
+    CONTRACT_TEST_PROVENANCE as DB_CONTRACT_TEST_PROVENANCE,
+    LEGACY_UNASSIGNED_PROVENANCE,
+    SessionLocal,
+    USER_PROVENANCE as DB_USER_PROVENANCE,
+    utcnow,
+)
 from .engine import assess_sources
 from .models import AnalysisSession, Classification, Incident, SourceFile
 from .sources import demonstration_files, research
 
-CONTRACT_TEST_PROVENANCE = "CONTRACT_TEST"
-USER_PROVENANCE = "USER"
+CONTRACT_TEST_PROVENANCE = DB_CONTRACT_TEST_PROVENANCE
+USER_PROVENANCE = DB_USER_PROVENANCE
 logger = logging.getLogger("api_server.store")
 
 
@@ -37,7 +44,6 @@ def _session(row: AnalysisSessionRow) -> dict:
 
 
 def _seed() -> None:
-    init_db()
     with SessionLocal.begin() as db:
         if db.get(AnalysisSessionRow, "demo-session"):
             return
@@ -50,7 +56,9 @@ def _seed() -> None:
             "sourceNotices": ["This saved training session contains synthetic demonstration records."],
             "assessment": None,
         }
-        db.add(AnalysisSessionRow(id="demo-session", data=data, version=1, provenance=USER_PROVENANCE, created_at=now, updated_at=now))
+        # Demonstration data predates user ownership and remains deliberately
+        # unassigned. It is never presented to the first (or any) signed-in user.
+        db.add(AnalysisSessionRow(id="demo-session", data=data, version=1, provenance=LEGACY_UNASSIGNED_PROVENANCE, created_at=now, updated_at=now))
 
 
 def _valid_ownership(provenance: str, run_id: str | None) -> bool:
@@ -62,31 +70,45 @@ def _valid_ownership(provenance: str, run_id: str | None) -> bool:
     )
 
 
-def _write(session: dict, expected: int) -> dict:
+def _write(session: dict, expected: int, owner_id: str | None = None) -> dict:
     now = utcnow()
     count_answer = (session.get("assessment") or {}).get("countAnswer") or {}
     finalized = bool(count_answer.get("finalized"))
     payload = {k: v for k, v in session.items() if k not in {"version", "updatedAt", "archivedAt"}}
     with SessionLocal.begin() as db:
-        result = db.execute(
-            update(AnalysisSessionRow)
-            .where(AnalysisSessionRow.id == session["id"], AnalysisSessionRow.version == expected)
-            .values(data=payload, version=expected + 1, updated_at=now, finalized_at=now if finalized else None)
+        statement = update(AnalysisSessionRow).where(
+            AnalysisSessionRow.id == session["id"],
+            AnalysisSessionRow.version == expected,
         )
+        if owner_id is not None:
+            statement = statement.where(
+                AnalysisSessionRow.owner_id == owner_id,
+                AnalysisSessionRow.provenance == USER_PROVENANCE,
+            )
+        result = db.execute(statement.values(
+            data=payload, version=expected + 1, updated_at=now,
+            finalized_at=now if finalized else None,
+        ))
         if result.rowcount != 1:
             raise AnalysisVersionConflictError()
         row = db.get(AnalysisSessionRow, session["id"])
         return _session(row)
 
 
-def get_session(session_id: str) -> dict | None:
+def get_session(session_id: str, owner_id: str | None = None) -> dict | None:
     _seed()
     with SessionLocal() as db:
-        row = db.get(AnalysisSessionRow, session_id)
+        statement = select(AnalysisSessionRow).where(AnalysisSessionRow.id == session_id)
+        if owner_id is not None:
+            statement = statement.where(
+                AnalysisSessionRow.owner_id == owner_id,
+                AnalysisSessionRow.provenance == USER_PROVENANCE,
+            )
+        row = db.scalar(statement)
         return _session(row) if row else None
 
 
-def list_sessions(include_archived: bool = False) -> list[dict]:
+def list_sessions(include_archived: bool = False, owner_id: str | None = None) -> list[dict]:
     _seed()
     try:
         purge_expired_archived_sessions()
@@ -94,27 +116,37 @@ def list_sessions(include_archived: bool = False) -> list[dict]:
         logger.exception("Archived-session cleanup failed during session listing")
     with SessionLocal() as db:
         query = select(AnalysisSessionRow).order_by(AnalysisSessionRow.created_at.desc())
+        if owner_id is not None:
+            query = query.where(
+                AnalysisSessionRow.owner_id == owner_id,
+                AnalysisSessionRow.provenance == USER_PROVENANCE,
+            )
         if not include_archived:
             query = query.where(AnalysisSessionRow.archived_at.is_(None))
         return [_session(row) for row in db.scalars(query)]
 
 
 def create_session(prompt: str, analyst: str | None = None, classification: str | None = None,
-                   provenance: str | None = None, run_id: str | None = None) -> dict:
+                   provenance: str | None = None, run_id: str | None = None,
+                   owner_id: str | None = None) -> dict:
     _seed()
     provenance = provenance or USER_PROVENANCE
     if not _valid_ownership(provenance, run_id):
         raise ValueError("Analysis session provenance and runId are inconsistent")
+    if provenance == USER_PROVENANCE and (not isinstance(owner_id, str) or not owner_id.strip()):
+        raise ValueError("User analysis sessions require an authenticated owner")
+    if provenance == CONTRACT_TEST_PROVENANCE and owner_id is not None:
+        raise ValueError("Contract test analysis sessions cannot have a user owner")
     now = utcnow()
     data = {"id": str(uuid4()), "prompt": prompt, "analyst": analyst or "Current Analyst", "classification": classification or "UNCLASSIFIED", "status": "DRAFT", "createdAt": _iso(now), "sourceFiles": [], "sourceNotices": [], "assessment": None}
     with SessionLocal.begin() as db:
-        db.add(AnalysisSessionRow(id=data["id"], data=data, provenance=provenance, run_id=run_id, version=1, created_at=now, updated_at=now))
+        db.add(AnalysisSessionRow(id=data["id"], data=data, provenance=provenance, owner_id=owner_id, run_id=run_id, version=1, created_at=now, updated_at=now))
     return {**data, "version": 1, "updatedAt": _iso(now), "archivedAt": None}
 
 
-def set_archived(session_id: str, archived: bool, expected: int) -> dict | None:
+def set_archived(session_id: str, archived: bool, expected: int, owner_id: str | None = None) -> dict | None:
     _seed()
-    session = get_session(session_id)
+    session = get_session(session_id, owner_id)
     if not session:
         return None
     if session["version"] != expected:
@@ -123,39 +155,50 @@ def set_archived(session_id: str, archived: bool, expected: int) -> dict | None:
         raise FinalizedAnalysisArchiveError()
     now = utcnow()
     with SessionLocal.begin() as db:
-        result = db.execute(update(AnalysisSessionRow).where(AnalysisSessionRow.id == session_id, AnalysisSessionRow.version == expected).values(archived_at=now if archived else None, updated_at=now, version=expected + 1))
+        statement = update(AnalysisSessionRow).where(
+            AnalysisSessionRow.id == session_id,
+            AnalysisSessionRow.version == expected,
+        )
+        if owner_id is not None:
+            statement = statement.where(
+                AnalysisSessionRow.owner_id == owner_id,
+                AnalysisSessionRow.provenance == USER_PROVENANCE,
+            )
+        result = db.execute(statement.values(
+            archived_at=now if archived else None, updated_at=now, version=expected + 1,
+        ))
         if result.rowcount != 1:
             raise AnalysisVersionConflictError()
         return _session(db.get(AnalysisSessionRow, session_id))
 
 
-async def run_research(session_id: str, connector_ids: list[str], max_results: int | None) -> dict | None:
-    session = get_session(session_id)
+async def run_research(session_id: str, connector_ids: list[str], max_results: int | None, owner_id: str | None = None) -> dict | None:
+    session = get_session(session_id, owner_id)
     if not session:
         return None
     session["status"] = "RESEARCHING"
-    current = _write(session, session["version"])
+    current = _write(session, session["version"], owner_id)
     try:
         files, notices = await research(current["prompt"], connector_ids, max_results or 12)
         current.update(sourceFiles=files, sourceNotices=notices, status="READY_FOR_SELECTION" if files else "FAILED", assessment=None)
-        return _write(current, current["version"])
+        return _write(current, current["version"], owner_id)
     except Exception as exc:
         current.update(status="FAILED", sourceNotices=[str(exc)])
-        _write(current, current["version"])
+        _write(current, current["version"], owner_id)
         raise
 
 
-def assess_session(session_id: str, selected_ids: list[str]) -> dict | None:
-    session = get_session(session_id)
+def assess_session(session_id: str, selected_ids: list[str], owner_id: str | None = None) -> dict | None:
+    session = get_session(session_id, owner_id)
     if not session:
         return None
     selected = [x for x in session["sourceFiles"] if x["id"] in selected_ids]
     session.update(assessment=assess_sources(selected, session["prompt"]), status="COMPLETE")
-    return _write(session, session["version"])
+    return _write(session, session["version"], owner_id)
 
 
-def update_review(session_id: str, incidents: list[dict], finalized: bool, expected: int) -> dict | None:
-    session = get_session(session_id)
+def update_review(session_id: str, incidents: list[dict], finalized: bool, expected: int, owner_id: str | None = None) -> dict | None:
+    session = get_session(session_id, owner_id)
     if not session or not (session.get("assessment") or {}).get("countAnswer"):
         return None
     if session["version"] != expected:
@@ -165,7 +208,7 @@ def update_review(session_id: str, incidents: list[dict], finalized: bool, expec
     included = sum(x.get("status") == "INCLUDED" for x in incidents)
     answer.update(provisionalCount=included, answerStatus="SUPPORTED" if included else "INSUFFICIENT_EVIDENCE", finalized=finalized)
     session["assessment"]["provisional"] = not finalized
-    return _write(session, expected)
+    return _write(session, expected, owner_id)
 
 
 def purge_expired_archived_sessions(now: datetime | None = None) -> int:

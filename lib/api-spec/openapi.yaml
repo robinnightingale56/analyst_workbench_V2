@@ -7,6 +7,8 @@ info:
 servers:
   - url: /api
     description: Base API path
+security:
+  - ClerkSession: []
 tags:
   - name: health
     description: Health operations
@@ -17,6 +19,7 @@ tags:
 paths:
   /healthz:
     get:
+      security: []
       operationId: healthCheck
       tags: [health]
       summary: Health check
@@ -225,6 +228,12 @@ paths:
                 items:
                   $ref: "#/components/schemas/HistoricalRating"
 components:
+  securitySchemes:
+    ClerkSession:
+      type: apiKey
+      in: cookie
+      name: __session
+      description: Clerk same-origin browser session cookie.
   parameters:
     SessionId:
       name: sessionId

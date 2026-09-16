@@ -17,7 +17,7 @@ export async function createViteConfig(env: NodeJS.ProcessEnv) {
     base: basePath,
     plugins: [
       react(),
-      tailwindcss(),
+      tailwindcss({ optimize: false }),
       runtimeErrorOverlay(),
       ...(env.NODE_ENV !== 'production' && env.REPL_ID !== undefined
         ? [

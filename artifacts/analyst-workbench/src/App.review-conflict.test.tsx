@@ -14,6 +14,22 @@ vi.mock('@workspace/api-client-react', () => ({
   getAnalysisSession,
 }));
 
+vi.mock('@clerk/react', () => ({
+  ClerkProvider: ({ children }: { children: unknown }) => children,
+  Show: ({ children }: { children: unknown }) => children,
+  SignIn: () => null,
+  SignUp: () => null,
+  useClerk: () => ({ addListener: () => () => {}, signOut: vi.fn() }),
+  useUser: () => ({ user: null }),
+  useAuth: () => ({ isLoaded: true, isSignedIn: false }),
+}));
+
+vi.mock('@clerk/react/internal', () => ({
+  publishableKeyFromHost: () => 'pk_test_unit_test',
+}));
+
+vi.mock('@clerk/themes', () => ({ shadcn: {} }));
+
 import { CountAnswerReview } from './App';
 
 const originalServerIncident = {

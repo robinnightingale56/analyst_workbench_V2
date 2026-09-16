@@ -143,6 +143,7 @@ def test_cloned_drizzle_schema_matches_jsonb_timestamp_constraint_and_indexes(
 
     columns = {column["name"]: column for column in inspect(engine).get_columns("analysis_sessions")}
     assert str(columns["data"]["type"]).upper() == "JSONB"
+    assert "owner_id" in columns
     for name in ("archived_at", "finalized_at", "created_at", "updated_at"):
         assert columns[name]["type"].timezone is True
 
@@ -165,6 +166,7 @@ def test_cloned_drizzle_schema_matches_jsonb_timestamp_constraint_and_indexes(
     assert "provenance = 'USER'" in ownership
     assert "provenance = 'CONTRACT_TEST'" in ownership
     assert "run_id IS NULL" in ownership
+    assert "owner_id IS NOT NULL" in ownership
     assert "run_id !~ '^[[:space:]]*$'" in ownership
 
     expired = indexes["analysis_sessions_expired_archive_idx"]
@@ -173,6 +175,7 @@ def test_cloned_drizzle_schema_matches_jsonb_timestamp_constraint_and_indexes(
     stale = indexes["analysis_sessions_stale_contract_fixture_idx"]
     assert "provenance = 'CONTRACT_TEST'" in stale
     assert "created_at" in stale and "run_id" in stale
+    assert "owner_id" in indexes["analysis_sessions_owner_archive_idx"]
 
 
 def test_typescript_row_is_read_and_compare_and_swap_updated_by_python(contract_run):
@@ -208,7 +211,10 @@ def test_python_rows_satisfy_application_and_database_ownership_rules(contract_r
     from api_server.db import AnalysisSessionRow, SessionLocal, utcnow
     from api_server.store import CONTRACT_TEST_PROVENANCE, create_session
 
-    analyst = create_session("Python analyst-owned PostgreSQL session")
+    analyst = create_session(
+        "Python analyst-owned PostgreSQL session",
+        owner_id="postgres-contract-user",
+    )
     contract_run.ids.add(analyst["id"])
     contract = create_session(
         "Python contract-owned PostgreSQL session",
@@ -221,6 +227,7 @@ def test_python_rows_satisfy_application_and_database_ownership_rules(contract_r
         analyst_row = db.get(AnalysisSessionRow, analyst["id"])
         contract_row = db.get(AnalysisSessionRow, contract["id"])
         assert analyst_row.provenance == "USER" and analyst_row.run_id is None
+        assert analyst_row.owner_id == "postgres-contract-user"
         assert contract_row.provenance == "CONTRACT_TEST"
         assert contract_row.run_id == contract_run.run_id
         assert analyst_row.created_at.tzinfo is not None

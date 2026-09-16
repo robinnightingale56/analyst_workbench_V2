@@ -12,8 +12,9 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 export const ANALYSIS_SESSION_OWNERSHIP_RULES = [
-  { provenance: "USER", requiresRunId: false },
-  { provenance: "CONTRACT_TEST", requiresRunId: true },
+  { provenance: "USER", requiresRunId: false, requiresOwnerId: true },
+  { provenance: "CONTRACT_TEST", requiresRunId: true, requiresOwnerId: false },
+  { provenance: "LEGACY_UNASSIGNED", requiresRunId: false, requiresOwnerId: false },
 ] as const;
 
 export type AnalysisSessionProvenance =
@@ -22,13 +23,19 @@ export type AnalysisSessionProvenance =
 export const USER_PROVENANCE = "USER" satisfies AnalysisSessionProvenance;
 export const CONTRACT_TEST_PROVENANCE =
   "CONTRACT_TEST" satisfies AnalysisSessionProvenance;
+export const LEGACY_UNASSIGNED_PROVENANCE =
+  "LEGACY_UNASSIGNED" satisfies AnalysisSessionProvenance;
 
 const ownershipCheckSql = ANALYSIS_SESSION_OWNERSHIP_RULES.map(
-  ({ provenance, requiresRunId }) =>
+  ({ provenance, requiresRunId, requiresOwnerId }) =>
     `(provenance = '${provenance}' AND ${
       requiresRunId
         ? "run_id IS NOT NULL AND run_id !~ '^[[:space:]]*$'"
         : "run_id IS NULL"
+    } AND ${
+      requiresOwnerId
+        ? "owner_id IS NOT NULL AND owner_id !~ '^[[:space:]]*$'"
+        : "owner_id IS NULL"
     })`,
 ).join(" OR ");
 
@@ -41,6 +48,7 @@ export const analysisSessionsTable = pgTable(
       .$type<AnalysisSessionProvenance>()
       .notNull()
       .default(USER_PROVENANCE),
+    ownerId: text("owner_id"),
     runId: text("run_id"),
     version: integer("version").notNull().default(1),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
@@ -59,6 +67,9 @@ export const analysisSessionsTable = pgTable(
       .where(
         sql`${table.provenance} = 'CONTRACT_TEST' AND ${table.runId} !~ '^[[:space:]]*$'`,
       ),
+    index("analysis_sessions_owner_archive_idx")
+      .on(table.ownerId, table.archivedAt)
+      .where(sql`${table.provenance} = 'USER'`),
     check(
       "analysis_sessions_ownership_nonwhitespace_run_id_required_check",
       sql.raw(ownershipCheckSql),
