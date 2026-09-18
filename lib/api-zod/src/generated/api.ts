@@ -651,6 +651,37 @@ export const ListAnalysisStartersResponse = zod.object({
 
 
 /**
+ * @summary Discover verified current events from public RSS providers
+ */
+export const listCurrentEventsQueryClassificationDefault = `UNCLASSIFIED`;
+
+export const ListCurrentEventsQueryParams = zod.object({
+  "classification": zod.enum(['UNCLASSIFIED', 'CUI', 'SECRET', 'TS']).default(listCurrentEventsQueryClassificationDefault)
+})
+
+export const ListCurrentEventsResponse = zod.object({
+  "events": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "question": zod.string(),
+  "url": zod.string().url(),
+  "provider": zod.string(),
+  "publishedAt": zod.coerce.date(),
+  "retrievedAt": zod.coerce.date(),
+  "freshness": zod.enum(['CURRENT'])
+})),
+  "providers": zod.array(zod.object({
+  "provider": zod.string(),
+  "status": zod.enum(['OK', 'ERROR', 'BLOCKED']),
+  "message": zod.string()
+})),
+  "checkedAt": zod.coerce.date(),
+  "freshnessWindowHours": zod.number(),
+  "blocked": zod.boolean()
+})
+
+
+/**
  * @summary Run research against selected source adapters
  */
 export const RunResearchParams = zod.object({

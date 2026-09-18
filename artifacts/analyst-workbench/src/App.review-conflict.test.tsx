@@ -10,6 +10,7 @@ vi.mock('@workspace/api-client-react', () => ({
   AnalysisSessionClassification: {},
   AnalyticStandardStatus: { REVIEW: 'REVIEW' },
   SourceConnectorStatus: {},
+  useListCurrentEvents: () => ({ data: undefined, isLoading: false, isFetching: false, error: undefined, refetch: vi.fn() }),
   useUpdateIncidentReview: () => ({ mutate, isPending: false }),
   getAnalysisSession,
 }));

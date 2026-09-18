@@ -147,6 +147,26 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AnalysisStarters"
+  /current-events:
+    get:
+      operationId: listCurrentEvents
+      tags: [sources]
+      summary: Discover verified current events from public RSS providers
+      parameters:
+        - name: classification
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [UNCLASSIFIED, CUI, SECRET, TS]
+            default: UNCLASSIFIED
+      responses:
+        "200":
+          description: Current event discovery feed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentEventFeed"
   /analysis-sessions/{sessionId}/research:
     post:
       operationId: runResearch
@@ -534,6 +554,60 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/OngoingEventStarter"
+    CurrentEventFeed:
+      type: object
+      required: [events, providers, checkedAt, freshnessWindowHours, blocked]
+      properties:
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/CurrentEvent"
+        providers:
+          type: array
+          items:
+            $ref: "#/components/schemas/DiscoveryProviderStatus"
+        checkedAt:
+          type: string
+          format: date-time
+        freshnessWindowHours:
+          type: number
+        blocked:
+          type: boolean
+    CurrentEvent:
+      type: object
+      required: [id, title, question, url, provider, publishedAt, retrievedAt, freshness]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        question:
+          type: string
+        url:
+          type: string
+          format: uri
+        provider:
+          type: string
+        publishedAt:
+          type: string
+          format: date-time
+        retrievedAt:
+          type: string
+          format: date-time
+        freshness:
+          type: string
+          enum: [CURRENT]
+    DiscoveryProviderStatus:
+      type: object
+      required: [provider, status, message]
+      properties:
+        provider:
+          type: string
+        status:
+          type: string
+          enum: [OK, ERROR, BLOCKED]
+        message:
+          type: string
     RecentQuestionStarter:
       type: object
       required: [sessionId, prompt, classification, updatedAt]
@@ -830,4 +904,3 @@ components:
           type: array
           items:
             type: string
-

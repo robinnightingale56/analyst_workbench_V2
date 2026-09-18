@@ -26,6 +26,7 @@ import type {
   AnalysisStarters,
   AssessmentInput,
   AuthReadiness,
+  CurrentEventFeed,
   ErrorResponse,
   EvaluationVectorDefinition,
   HealthDegraded,
@@ -33,6 +34,7 @@ import type {
   HistoricalRating,
   IncidentReviewUpdate,
   ListAnalysisSessionsParams,
+  ListCurrentEventsParams,
   ResearchRunInput,
   SourceConnector
 } from './api.schemas';
@@ -624,6 +626,90 @@ export function useListAnalysisStarters<TData = Awaited<ReturnType<typeof listAn
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListAnalysisStartersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListCurrentEventsUrl = (params?: ListCurrentEventsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/current-events?${stringifiedParams}` : `/api/current-events`
+}
+
+/**
+ * @summary Discover verified current events from public RSS providers
+ */
+export const listCurrentEvents = async (params?: ListCurrentEventsParams, options?: Parameters<typeof customFetch>[1]): Promise<CurrentEventFeed> => {
+
+  return customFetch<CurrentEventFeed>(getListCurrentEventsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCurrentEventsQueryKey = (params?: ListCurrentEventsParams,) => {
+    return [
+    `/api/current-events`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListCurrentEventsQueryOptions = <TData = Awaited<ReturnType<typeof listCurrentEvents>>, TError = ErrorType<unknown>>(params?: ListCurrentEventsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCurrentEvents>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCurrentEventsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCurrentEvents>>> = ({ signal }) => listCurrentEvents(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCurrentEvents>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCurrentEventsQueryResult = NonNullable<Awaited<ReturnType<typeof listCurrentEvents>>>
+export type ListCurrentEventsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Discover verified current events from public RSS providers
+ */
+
+export function useListCurrentEvents<TData = Awaited<ReturnType<typeof listCurrentEvents>>, TError = ErrorType<unknown>>(
+ params?: ListCurrentEventsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCurrentEvents>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCurrentEventsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

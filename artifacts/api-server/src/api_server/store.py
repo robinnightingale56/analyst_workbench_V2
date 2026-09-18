@@ -14,7 +14,12 @@ from .db import (
 )
 from .engine import assess_sources
 from .models import AnalysisSession, Classification, Incident, SourceFile
-from .sources import demonstration_files, research
+from .sources import (
+    blocked_current_event_feed,
+    demonstration_files,
+    discover_current_events,
+    research,
+)
 
 CONTRACT_TEST_PROVENANCE = DB_CONTRACT_TEST_PROVENANCE
 USER_PROVENANCE = DB_USER_PROVENANCE
@@ -197,6 +202,19 @@ def list_analysis_starters(owner_id: str) -> dict:
                 "retrievedAt": retrieved_at,
             })
     return {"recentQuestions": recent, "ongoingEvents": events}
+
+
+async def list_current_events(classification: Classification | str = Classification.UNCLASSIFIED) -> dict:
+    """Return a live discovery feed without reading or mutating sessions.
+
+    Public RSS collection is permitted only for UNCLASSIFIED discovery.  Keep
+    this authorization gate separate from ``list_analysis_starters`` so adding
+    the feed cannot accidentally broaden the owner-scoped starter query.
+    """
+    value = classification.value if isinstance(classification, Classification) else classification
+    if value != Classification.UNCLASSIFIED.value:
+        return blocked_current_event_feed()
+    return await discover_current_events()
 
 
 def create_session(prompt: str, analyst: str | None = None, classification: str | None = None,

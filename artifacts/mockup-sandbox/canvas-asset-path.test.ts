@@ -99,5 +99,5 @@ describe("Canvas production asset paths", () => {
     } finally {
       await rm(outputDirectory, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });

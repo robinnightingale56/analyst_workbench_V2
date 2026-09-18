@@ -4,9 +4,10 @@ import html
 import ipaddress
 import re
 import socket
-from datetime import datetime, timezone
-from urllib.parse import urljoin, urlparse
-from uuid import uuid4
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
+from urllib.parse import urlencode, urljoin, urlparse
+from uuid import NAMESPACE_URL, uuid4, uuid5
 import httpx
 import trafilatura
 from bs4 import BeautifulSoup
@@ -16,11 +17,32 @@ MAX_DOCUMENT_BYTES = 2_000_000
 MAX_DOCUMENT_CHARS = 500_000
 DOCUMENT_TIMEOUT_SECONDS = 10
 MAX_DOCUMENT_REDIRECTS = 3
+CURRENT_EVENT_FRESHNESS_HOURS = 72
+CURRENT_EVENT_TIMEOUT_SECONDS = 8
+MAX_CURRENT_EVENT_BYTES = 1_000_000
+MAX_CURRENT_EVENTS_PER_PROVIDER = 12
+MAX_CURRENT_EVENTS = 20
 READABLE_CONTENT_TYPES = {
     "text/html",
     "application/xhtml+xml",
     "text/plain",
 }
+
+# Current-event discovery is intentionally not a search endpoint.  These
+# provider URLs contain a fixed, general-interest query and never include a
+# user's question, classification, or session data.
+CURRENT_EVENT_QUERY = "world news"
+CURRENT_EVENT_PROVIDERS = (
+    (
+        "Google News",
+        "https://news.google.com/rss/search?"
+        + urlencode({"q": CURRENT_EVENT_QUERY, "hl": "en-US", "gl": "US", "ceid": "US:en"}),
+    ),
+    (
+        "BBC News",
+        "https://feeds.bbci.co.uk/news/world/rss.xml",
+    ),
+)
 
 SOURCE_CONNECTORS = [
     {"id": "google-news-rss", "name": "Google News", "description": "Live news and article discovery through the public Google News RSS feed.", "status": "READY", "mode": "LIVE", "sourceTypes": ["NEWS", "WEB"]},
@@ -90,6 +112,295 @@ def _crossref_published(work: dict, fallback: str) -> tuple[str, str | None, str
 def _rss_items(xml: str) -> list[BeautifulSoup]:
     soup = BeautifulSoup(xml, "xml")
     return soup.find_all("item")
+
+
+class CurrentEventFeedParseError(ValueError):
+    """The provider response was not a valid RSS document."""
+
+
+def _utc_iso(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _strict_provider_datetime(raw: str | None) -> datetime | None:
+    """Parse a provider timestamp without inventing a retrieval fallback."""
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    value = raw.strip()
+    try:
+        parsed = parsedate_to_datetime(value)
+    except (TypeError, ValueError, OverflowError):
+        parsed = None
+    if parsed is None:
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except (TypeError, ValueError, OverflowError):
+            return None
+    if parsed.tzinfo is None:
+        # A timezone-less provider date cannot be verified against a UTC
+        # freshness window and is therefore treated as unknown.
+        return None
+    return parsed.astimezone(timezone.utc)
+
+
+def _valid_event_url(raw: object) -> str | None:
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    value = raw.strip()
+    try:
+        parsed = urlparse(value)
+        hostname = parsed.hostname
+        # Accessing port also validates malformed values such as ":notaport".
+        _ = parsed.port
+    except ValueError:
+        return None
+    try:
+        address = ipaddress.ip_address(hostname) if hostname else None
+    except ValueError:
+        address = None
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not hostname
+        or hostname.lower() in {"localhost", "localhost.localdomain"}
+        or (address is not None and not address.is_global)
+        or parsed.username is not None
+        or parsed.password is not None
+        or any(character.isspace() for character in value)
+    ):
+        return None
+    return value
+
+
+def parse_current_events_rss(
+    xml: str,
+    provider: str,
+    retrieved_at: str | None = None,
+    *,
+    freshness_window_hours: int = CURRENT_EVENT_FRESHNESS_HOURS,
+) -> list[dict]:
+    """Return only RSS records with a verified, recent provider date.
+
+    This parser deliberately does not use the existing ``_published`` helper:
+    that helper supplies a retrieval fallback for research source files, while
+    a current-event result must never present retrieval time as publication
+    time.
+    """
+    if not isinstance(xml, str) or not xml.strip():
+        raise CurrentEventFeedParseError("Provider returned an empty RSS response")
+    try:
+        # BeautifulSoup is useful for the existing adapters because it recovers
+        # from malformed feeds.  Recovery is unsafe here: it could turn an
+        # invalid response into apparently verified headlines, so validate the
+        # XML first with the standard library parser.
+        import xml.etree.ElementTree as ElementTree
+        ElementTree.fromstring(xml)
+    except (ElementTree.ParseError, TypeError):
+        raise CurrentEventFeedParseError("Provider returned malformed RSS") from None
+
+    retrieved = _strict_provider_datetime(retrieved_at) if retrieved_at else datetime.now(timezone.utc)
+    if retrieved is None:
+        raise ValueError("retrieval time is invalid")
+    cutoff = retrieved - timedelta(hours=freshness_window_hours)
+    items = _rss_items(xml)[:MAX_CURRENT_EVENTS_PER_PROVIDER]
+    events: list[dict] = []
+    seen_urls: set[str] = set()
+    for item in items:
+        title_tag = item.find("title")
+        title = _clean(title_tag.get_text() if title_tag else None, "", 300)
+        if not title:
+            continue
+
+        url_tag = item.find("link")
+        url = _valid_event_url(url_tag.get_text(strip=True) if url_tag else None)
+        if not url or url in seen_urls:
+            continue
+
+        published_raw = None
+        for date_tag_name in ("pubDate", "published", "date", "dc:date"):
+            date_tag = item.find(date_tag_name)
+            if date_tag:
+                published_raw = date_tag.get_text(strip=True)
+                break
+        published = _strict_provider_datetime(published_raw)
+        # Unknown, future, and stale records are all excluded rather than
+        # silently relabeled as current.
+        if published is None or published < cutoff or published > retrieved:
+            continue
+
+        # Synthetic/demo records should not enter a live feed even if a test
+        # provider gives them a superficially valid timestamp and URL.
+        marker_text = " ".join(
+            _clean(tag.get_text(), "", 500)
+            for tag in (item.find("title"), item.find("description"))
+            if tag
+        ).lower()
+        if any(marker in marker_text for marker in ("synthetic demonstration", "training record:")):
+            continue
+
+        seen_urls.add(url)
+        events.append({
+            "id": str(uuid5(NAMESPACE_URL, f"{provider}:{url}")),
+            "title": title,
+            "question": (
+                f"What does “{title}” indicate about the current operating environment, "
+                "and what should an analyst watch next?"
+            ),
+            "url": url,
+            "provider": provider,
+            "publishedAt": _utc_iso(published),
+            "retrievedAt": _utc_iso(retrieved),
+            "freshness": "CURRENT",
+        })
+    return events
+
+
+async def _fetch_current_provider(
+    client: httpx.AsyncClient,
+    provider: str,
+    url: str,
+) -> tuple[list[dict], dict]:
+    """Fetch one bounded RSS response and return a safe provider status."""
+    try:
+        # ``client.get`` buffers the whole response before returning.  Stream
+        # the body instead so the byte cap applies while the provider is being
+        # read, and keep one wall-clock deadline over connect, headers, and all
+        # body chunks.
+        async with asyncio.timeout(CURRENT_EVENT_TIMEOUT_SECONDS):
+            async with client.stream(
+                "GET",
+                url,
+                timeout=CURRENT_EVENT_TIMEOUT_SECONDS,
+                headers={
+                    "User-Agent": "AnalystWorkbenchCurrentEventDiscovery/1.0",
+                    "Accept": "application/rss+xml,application/xml,text/xml",
+                },
+            ) as response:
+                if response.is_redirect:
+                    # Redirects are not followed for discovery, keeping the
+                    # fixed provider allowlist and request count auditable.
+                    raise httpx.HTTPStatusError(
+                        "provider redirect",
+                        request=response.request,
+                        response=response,
+                    )
+                response.raise_for_status()
+                content_length = response.headers.get("content-length")
+                if content_length:
+                    try:
+                        content_length_value = int(content_length)
+                    except ValueError:
+                        raise ValueError("provider response had an invalid content length") from None
+                    if content_length_value > MAX_CURRENT_EVENT_BYTES:
+                        raise ValueError("provider response exceeded the RSS size limit")
+
+                chunks: list[bytes] = []
+                byte_count = 0
+                async for chunk in response.aiter_bytes():
+                    byte_count += len(chunk)
+                    if byte_count > MAX_CURRENT_EVENT_BYTES:
+                        raise ValueError("provider response exceeded the RSS size limit")
+                    chunks.append(chunk)
+                raw = b"".join(chunks).decode(response.encoding or "utf-8", errors="replace")
+
+        retrieved_at = _utc_iso(datetime.now(timezone.utc))
+        events = parse_current_events_rss(raw, provider, retrieved_at)
+    except CurrentEventFeedParseError:
+        return [], {
+            "provider": provider,
+            "status": "ERROR",
+            "message": "Provider returned malformed RSS.",
+        }
+    except (httpx.TimeoutException, TimeoutError):
+        return [], {
+            "provider": provider,
+            "status": "ERROR",
+            "message": "Provider request timed out.",
+        }
+    except httpx.HTTPStatusError:
+        return [], {
+            "provider": provider,
+            "status": "ERROR",
+            "message": "Provider returned an unsuccessful response.",
+        }
+    except httpx.HTTPError:
+        return [], {
+            "provider": provider,
+            "status": "ERROR",
+            "message": "Provider could not be reached.",
+        }
+    except ValueError:
+        return [], {
+            "provider": provider,
+            "status": "ERROR",
+            "message": "Provider response exceeded the discovery limits.",
+        }
+    except Exception:
+        # Do not disclose transport/library details or provider response
+        # content to an analyst.  The status remains actionable and explicit.
+        return [], {
+            "provider": provider,
+            "status": "ERROR",
+            "message": "Provider discovery failed.",
+        }
+
+    if events:
+        message = f"Provider returned {len(events)} verified current event(s)."
+    else:
+        # A valid, successful empty feed is distinct from malformed RSS or an
+        # HTTP failure and is intentionally reported as OK.
+        message = "Provider returned no verified current events."
+    return events, {"provider": provider, "status": "OK", "message": message}
+
+
+def blocked_current_event_feed() -> dict:
+    checked_at = _utc_iso(datetime.now(timezone.utc))
+    return {
+        "events": [],
+        "providers": [
+            {
+                "provider": provider,
+                "status": "BLOCKED",
+                "message": "External discovery is blocked for non-UNCLASSIFIED classifications.",
+            }
+            for provider, _ in CURRENT_EVENT_PROVIDERS
+        ],
+        "checkedAt": checked_at,
+        "freshnessWindowHours": CURRENT_EVENT_FRESHNESS_HOURS,
+        "blocked": True,
+    }
+
+
+async def discover_current_events() -> dict:
+    """Discover current events from fixed public RSS providers.
+
+    The caller is responsible for classification authorization.  This
+    function has no session or database access and only requests the two
+    fixed provider URLs above.
+    """
+    async with httpx.AsyncClient(follow_redirects=False) as client:
+        results = await asyncio.gather(*(
+            _fetch_current_provider(client, provider, url)
+            for provider, url in CURRENT_EVENT_PROVIDERS
+        ))
+
+    events: list[dict] = []
+    statuses: list[dict] = []
+    seen_urls: set[str] = set()
+    for provider_result, status in results:
+        statuses.append(status)
+        for event in provider_result:
+            if event["url"] in seen_urls or len(events) >= MAX_CURRENT_EVENTS:
+                continue
+            seen_urls.add(event["url"])
+            events.append(event)
+    events.sort(key=lambda event: event["publishedAt"], reverse=True)
+    return {
+        "events": events,
+        "providers": statuses,
+        "checkedAt": _utc_iso(datetime.now(timezone.utc)),
+        "freshnessWindowHours": CURRENT_EVENT_FRESHNESS_HOURS,
+        "blocked": False,
+    }
 
 
 async def _resolve_public_http_url(

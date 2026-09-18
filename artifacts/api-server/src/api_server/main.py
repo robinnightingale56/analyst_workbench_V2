@@ -12,12 +12,15 @@ import httpx
 from .auth import auth_mode, auth_readiness, require_trusted_origin, require_user, trusted_origins
 from .config import get_settings
 from .engine import EVALUATION_VECTORS, HISTORICAL_RATINGS, deduplicate_incidents, incident_citation_error
-from .models import AnalysisStarters, ArchiveUpdate, AssessmentInput, CreateSession, IncidentReview, ResearchRun
+from .models import (
+    AnalysisStarters, ArchiveUpdate, AssessmentInput, Classification, CreateSession,
+    CurrentEventFeed, IncidentReview, ResearchRun,
+)
 from .sources import SOURCE_CONNECTORS, is_known_connector
 from .store import (
     AnalysisVersionConflictError, FinalizedAnalysisArchiveError, assess_session,
     create_session, get_session, list_analysis_starters, list_sessions, purge_expired_archived_sessions,
-    run_research, set_archived, update_review,
+    list_current_events, run_research, set_archived, update_review,
 )
 
 logger = logging.getLogger("api_server")
@@ -214,7 +217,12 @@ async def post_analysis_session(
 async def get_analysis_starters(user_id: str = Depends(require_user)):
     return list_analysis_starters(owner_id=user_id)
 
-
+@app.get("/api/current-events", response_model=CurrentEventFeed)
+async def get_current_events(
+    classification: Classification = Query(Classification.UNCLASSIFIED),
+    _: str = Depends(require_user),
+):
+    return await list_current_events(classification)
 @app.get("/api/analysis-sessions/{sessionId}")
 async def get_analysis_session(sessionId: str, user_id: str = Depends(require_user)):
     session = get_session(sessionId, owner_id=user_id)

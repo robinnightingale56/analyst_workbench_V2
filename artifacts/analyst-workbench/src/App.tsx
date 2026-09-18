@@ -41,6 +41,7 @@ import {
   SourceConnectorStatus,
   useCreateAnalysisSession,
   useCreateAssessment,
+  useListCurrentEvents,
   useGetAnalysisSession,
   useHealthCheck,
   useListAnalysisSessions,
@@ -290,6 +291,7 @@ export function Home() {
   const querySessionId = new URLSearchParams(window.location.search).get('session');
   const [prompt, setPrompt] = useState('');
   const [classification, setClassification] = useState<keyof typeof AnalysisSessionClassification>('UNCLASSIFIED');
+  const [classificationHydrated, setClassificationHydrated] = useState(() => !querySessionId);
   const [selectedConnectors, setSelectedConnectors] = useState<string[]>([]);
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
   const [activeSessionId, setActiveSessionId] = useState(querySessionId ?? '');
@@ -304,14 +306,29 @@ export function Home() {
 
   useEffect(() => {
     setActiveSessionId(querySessionId ?? '');
+    setClassificationHydrated(!querySessionId);
     setCreatedSession(null);
     setResearchResult(null);
     setSelectedSources([]);
     hydratedSessionId.current = '';
+    if (querySessionId) {
+      // Do not let a public feed request continue while the saved session's
+      // authoritative classification is being loaded.
+      void queryClient.cancelQueries({ queryKey: ['current-events'] });
+    }
   }, [querySessionId]);
   const connectorsQuery = useListSourceConnectors();
   const sessionQuery = useGetAnalysisSession(activeSessionId, { query: { enabled: Boolean(activeSessionId), queryKey: getGetAnalysisSessionQueryKey(activeSessionId) } });
   const startersQuery = useListAnalysisStarters();
+  const sessionClassificationReady = !querySessionId || (
+    classificationHydrated
+    && sessionQuery.data?.id === querySessionId
+  );
+  const currentEventsEnabled = sessionClassificationReady && classification === 'UNCLASSIFIED';
+  const currentEventsQuery = useListCurrentEvents(
+    { classification },
+    { query: { enabled: currentEventsEnabled, queryKey: ['current-events', classification] } },
+  );
   const vectorsQuery = useListEvaluationVectors();
   const createSession = useCreateAnalysisSession();
   const runResearch = useRunResearch();
@@ -356,6 +373,10 @@ export function Home() {
     setSelectedSources(restored.selectedSources);
     connectorsInitialized.current = true;
     hydratedSessionId.current = loaded.id;
+     setClassificationHydrated(true);
+     if (restored.classification !== 'UNCLASSIFIED') {
+       void queryClient.cancelQueries({ queryKey: ['current-events'] });
+     }
   }, [sessionQuery.data]);
 
   useEffect(() => {
@@ -424,7 +445,7 @@ export function Home() {
     <div className="rise flex flex-col justify-between gap-5 lg:flex-row lg:items-end"><div><div className="section-kicker">Active production cell / {session ? `Session ${session.id.slice(0, 8)}` : 'New session'}</div><h1 className="display mt-2 max-w-3xl text-3xl font-bold tracking-[-0.03em] text-foreground md:text-[40px]">Draft a provisional assessment from a research question.</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">Trace the research workflow. Every drafted judgment starts with a bounded question, a declared source posture, and visible uncertainty.</p></div><div className="flex items-center gap-2 border border-border bg-card px-3 py-2 text-xs text-muted-foreground"><ShieldCheck size={15} className="text-[hsl(174_44%_43%)]" /><span>Supports ICD-203 review</span></div></div>
     <section className="scanline panel-shadow border border-card-border bg-card" data-testid="panel-research-question">
       <div className="flex items-center justify-between border-b border-border/75 px-5 py-4 md:px-6"><div className="flex items-center gap-3"><span className="mono grid h-6 w-6 place-items-center bg-primary text-[10px] text-primary-foreground">01</span><div><div className="text-sm font-semibold">Frame the question</div><div className="text-xs text-muted-foreground">Define the decision space before you collect.</div></div></div><StatusPill status={session?.status ?? 'DRAFT'} /></div>
-      <div className="p-5 md:p-6"><label htmlFor="research-prompt" className="section-kicker">Intelligence question</label><textarea id="research-prompt" rows={4} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="What do you need to know, and by when?" className="mt-2 w-full resize-none border border-input bg-background px-4 py-3 text-sm leading-6 text-foreground placeholder:text-muted-foreground/70 focus:border-primary" data-testid="input-research-prompt" /><div className="mt-3 flex flex-wrap items-center gap-3"><label className="mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground" htmlFor="classification">Classification marking</label><select id="classification" value={classification} onChange={(event) => setClassification(event.target.value as keyof typeof AnalysisSessionClassification)} className="border border-input bg-background px-2.5 py-1.5 text-xs text-foreground" data-testid="select-classification">{Object.values(AnalysisSessionClassification).map((value) => <option key={value} value={value}>{value}</option>)}</select><span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"><LockKeyhole size={12} /> Records provenance; it does not classify text automatically.</span></div><p className="mt-2 max-w-3xl text-[11px] leading-5 text-[hsl(30_69%_32%)]">This development environment is not approved to hold classified information. A non-UNCLASSIFIED marking only restricts public collection; do not enter classified material.</p><StarterPanel starters={startersQuery.data} loading={startersQuery.isLoading} onUseQuestion={useAsNewQuestion} onOpenSession={resumeSession} /><details className="mt-5 border border-border bg-muted/20"><summary className="cursor-pointer px-4 py-3 text-sm font-semibold">Collection settings <span className="ml-2 text-xs font-normal text-muted-foreground">Choose source providers; evidence stays in the source board below.</span></summary><div className="border-t border-border p-4"><div className="section-kicker">Source posture</div><p className="mt-2 text-xs leading-5 text-muted-foreground">Ready public adapters are selected by default. A non-UNCLASSIFIED marking blocks public providers; demonstration records remain synthetic.</p><div className="mt-4"><ConnectorPicker connectors={connectorsQuery.data} selected={selectedConnectors} setSelected={setSelectedConnectors} loading={connectorsQuery.isLoading} error={Boolean(connectorsQuery.error)} classification={classification} /></div></div></details><button onClick={startSession} disabled={isBusy} className="mt-5 inline-flex items-center gap-2 bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-create-session">{isBusy ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}{runResearch.isPending ? 'Researching selected sources…' : session ? 'Research as a new question' : 'Research question'}</button></div>
+      <div className="p-5 md:p-6"><label htmlFor="research-prompt" className="section-kicker">Intelligence question</label><textarea id="research-prompt" rows={4} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="What do you need to know, and by when?" className="mt-2 w-full resize-none border border-input bg-background px-4 py-3 text-sm leading-6 text-foreground placeholder:text-muted-foreground/70 focus:border-primary" data-testid="input-research-prompt" /><div className="mt-3 flex flex-wrap items-center gap-3"><label className="mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground" htmlFor="classification">Classification marking</label><select id="classification" value={classification} onChange={(event) => { const nextClassification = event.target.value as keyof typeof AnalysisSessionClassification; setClassification(nextClassification); if (nextClassification !== 'UNCLASSIFIED') void queryClient.cancelQueries({ queryKey: ['current-events'] }); }} className="border border-input bg-background px-2.5 py-1.5 text-xs text-foreground" data-testid="select-classification">{Object.values(AnalysisSessionClassification).map((value) => <option key={value} value={value}>{value}</option>)}</select><span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"><LockKeyhole size={12} /> Records provenance; it does not classify text automatically.</span></div><p className="mt-2 max-w-3xl text-[11px] leading-5 text-[hsl(30_69%_32%)]">This development environment is not approved to hold classified information. A non-UNCLASSIFIED marking only restricts public collection; do not enter classified material.</p><StarterPanel starters={startersQuery.data} loading={startersQuery.isLoading} onUseQuestion={useAsNewQuestion} onOpenSession={resumeSession} currentEvents={currentEventsEnabled ? currentEventsQuery.data : undefined} currentEventsLoading={!sessionClassificationReady || (currentEventsEnabled && currentEventsQuery.isLoading)} currentEventsError={currentEventsEnabled && Boolean(currentEventsQuery.error)} currentEventsRestricted={sessionClassificationReady && classification !== 'UNCLASSIFIED'} currentEventsRefreshing={currentEventsEnabled && currentEventsQuery.isFetching} onRefreshCurrentEvents={currentEventsEnabled ? () => { void currentEventsQuery.refetch(); } : undefined} /><details className="mt-5 border border-border bg-muted/20"><summary className="cursor-pointer px-4 py-3 text-sm font-semibold">Collection settings <span className="ml-2 text-xs font-normal text-muted-foreground">Choose source providers; evidence stays in the source board below.</span></summary><div className="border-t border-border p-4"><div className="section-kicker">Source posture</div><p className="mt-2 text-xs leading-5 text-muted-foreground">Ready public adapters are selected by default. A non-UNCLASSIFIED marking blocks public providers; demonstration records remain synthetic.</p><div className="mt-4"><ConnectorPicker connectors={connectorsQuery.data} selected={selectedConnectors} setSelected={setSelectedConnectors} loading={connectorsQuery.isLoading} error={Boolean(connectorsQuery.error)} classification={classification} /></div></div></details><button onClick={startSession} disabled={isBusy} className="mt-5 inline-flex items-center gap-2 bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-create-session">{isBusy ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}{runResearch.isPending ? 'Researching selected sources…' : session ? 'Research as a new question' : 'Research question'}</button></div>
       {actionError ? <div className="flex items-center gap-2 border-t border-[hsl(5_69%_48%_/_0.22)] bg-[hsl(5_69%_48%_/_0.05)] px-5 py-3 text-xs text-[hsl(5_69%_40%)]" data-testid="error-workbench-action"><CircleAlert size={14} />{actionError}<button className="ml-auto" onClick={() => setActionError('')} aria-label="Dismiss error" data-testid="button-dismiss-error"><X size={14} /></button></div> : null}
     </section>
     <EvaluationVectorOverview vectors={vectorsQuery.data} results={session?.assessment?.vectorResults} loading={vectorsQuery.isLoading} />

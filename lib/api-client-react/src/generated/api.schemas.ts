@@ -473,6 +473,47 @@ export interface AnalysisStarters {
   ongoingEvents: OngoingEventStarter[];
 }
 
+export type CurrentEventFreshness = typeof CurrentEventFreshness[keyof typeof CurrentEventFreshness];
+
+
+export const CurrentEventFreshness = {
+  CURRENT: 'CURRENT',
+} as const;
+
+export interface CurrentEvent {
+  id: string;
+  title: string;
+  question: string;
+  url: string;
+  provider: string;
+  publishedAt: string;
+  retrievedAt: string;
+  freshness: CurrentEventFreshness;
+}
+
+export type DiscoveryProviderStatusStatus = typeof DiscoveryProviderStatusStatus[keyof typeof DiscoveryProviderStatusStatus];
+
+
+export const DiscoveryProviderStatusStatus = {
+  OK: 'OK',
+  ERROR: 'ERROR',
+  BLOCKED: 'BLOCKED',
+} as const;
+
+export interface DiscoveryProviderStatus {
+  provider: string;
+  status: DiscoveryProviderStatusStatus;
+  message: string;
+}
+
+export interface CurrentEventFeed {
+  events: CurrentEvent[];
+  providers: DiscoveryProviderStatus[];
+  checkedAt: string;
+  freshnessWindowHours: number;
+  blocked: boolean;
+}
+
 export type SourceConnectorStatus = typeof SourceConnectorStatus[keyof typeof SourceConnectorStatus];
 
 
@@ -526,4 +567,18 @@ export interface EvaluationVectorDefinition {
 export type ListAnalysisSessionsParams = {
 includeArchived?: boolean;
 };
+
+export type ListCurrentEventsParams = {
+classification?: ListCurrentEventsClassification;
+};
+
+export type ListCurrentEventsClassification = typeof ListCurrentEventsClassification[keyof typeof ListCurrentEventsClassification];
+
+
+export const ListCurrentEventsClassification = {
+  UNCLASSIFIED: 'UNCLASSIFIED',
+  CUI: 'CUI',
+  SECRET: 'SECRET',
+  TS: 'TS',
+} as const;
 

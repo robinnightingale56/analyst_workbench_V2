@@ -130,3 +130,28 @@ class OngoingEventStarter(BaseModel):
 class AnalysisStarters(BaseModel):
     recentQuestions: list[RecentQuestionStarter]
     ongoingEvents: list[OngoingEventStarter]
+
+
+class CurrentEvent(BaseModel):
+    id: str
+    title: str
+    question: str
+    url: str
+    provider: str
+    publishedAt: datetime
+    retrievedAt: datetime
+    freshness: Literal["CURRENT"]
+
+
+class DiscoveryProviderStatus(BaseModel):
+    provider: str
+    status: Literal["OK", "ERROR", "BLOCKED"]
+    message: str
+
+
+class CurrentEventFeed(BaseModel):
+    events: list[CurrentEvent]
+    providers: list[DiscoveryProviderStatus]
+    checkedAt: datetime
+    freshnessWindowHours: float
+    blocked: bool
