@@ -659,6 +659,9 @@ export const ListCurrentEventsQueryParams = zod.object({
   "classification": zod.enum(['UNCLASSIFIED', 'CUI', 'SECRET', 'TS']).default(listCurrentEventsQueryClassificationDefault)
 })
 
+export const listCurrentEventsResponseProvidersItemCachedDefault = false;
+export const listCurrentEventsResponseProvidersItemStaleDefault = false;
+
 export const ListCurrentEventsResponse = zod.object({
   "events": zod.array(zod.object({
   "id": zod.string(),
@@ -673,7 +676,11 @@ export const ListCurrentEventsResponse = zod.object({
   "providers": zod.array(zod.object({
   "provider": zod.string(),
   "status": zod.enum(['OK', 'ERROR', 'BLOCKED']),
-  "message": zod.string()
+  "message": zod.string(),
+  "cached": zod.boolean().default(listCurrentEventsResponseProvidersItemCachedDefault).describe('Whether the provider payload was reused from a cached snapshot.'),
+  "stale": zod.boolean().default(listCurrentEventsResponseProvidersItemStaleDefault).describe('Whether an expired cached snapshot was used after a provider failure.'),
+  "checkedAt": zod.coerce.date().nullish().describe('Original provider check time for the returned data; when no data is available, the time of the last attempt.'),
+  "lastAttemptAt": zod.coerce.date().nullish().describe('Time of the latest attempt to contact the provider.')
 })),
   "checkedAt": zod.coerce.date(),
   "freshnessWindowHours": zod.number(),

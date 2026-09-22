@@ -147,6 +147,10 @@ class DiscoveryProviderStatus(BaseModel):
     provider: str
     status: Literal["OK", "ERROR", "BLOCKED"]
     message: str
+    cached: bool = False
+    stale: bool = False
+    checkedAt: datetime | None = None
+    lastAttemptAt: datetime | None = None
 
 
 class CurrentEventFeed(BaseModel):

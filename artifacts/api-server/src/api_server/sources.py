@@ -4,8 +4,11 @@ import html
 import ipaddress
 import re
 import socket
+from copy import deepcopy
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
+from time import monotonic
 from urllib.parse import urlencode, urljoin, urlparse
 from uuid import NAMESPACE_URL, uuid4, uuid5
 import httpx
@@ -22,6 +25,9 @@ CURRENT_EVENT_TIMEOUT_SECONDS = 8
 MAX_CURRENT_EVENT_BYTES = 1_000_000
 MAX_CURRENT_EVENTS_PER_PROVIDER = 12
 MAX_CURRENT_EVENTS = 20
+CURRENT_EVENT_CACHE_SECONDS = 60
+CURRENT_EVENT_ERROR_CACHE_SECONDS = 30
+CURRENT_EVENT_STALE_SECONDS = 300
 READABLE_CONTENT_TYPES = {
     "text/html",
     "application/xhtml+xml",
@@ -370,37 +376,137 @@ def blocked_current_event_feed() -> dict:
     }
 
 
-async def discover_current_events() -> dict:
-    """Discover current events from fixed public RSS providers.
+@dataclass
+class _CurrentProviderSnapshot:
+    events: list[dict]
+    status: dict
+    checked_at: str
+    stored_at: float
 
-    The caller is responsible for classification authorization.  This
-    function has no session or database access and only requests the two
-    fixed provider URLs above.
+
+class CurrentEventDiscoveryCache:
+    """One bounded public feed cache per API process/event loop.
+
+    Only fixed provider keys are retained, with at most two bounded snapshots
+    per provider (latest attempt and last success). No user/session data enters
+    this cache. Monotonic time controls retry deadlines; UTC controls evidence
+    freshness. This is not a cross-worker/distributed cache.
     """
-    async with httpx.AsyncClient(follow_redirects=False) as client:
-        results = await asyncio.gather(*(
-            _fetch_current_provider(client, provider, url)
-            for provider, url in CURRENT_EVENT_PROVIDERS
-        ))
 
-    events: list[dict] = []
-    statuses: list[dict] = []
-    seen_urls: set[str] = set()
-    for provider_result, status in results:
-        statuses.append(status)
-        for event in provider_result:
-            if event["url"] in seen_urls or len(events) >= MAX_CURRENT_EVENTS:
-                continue
-            seen_urls.add(event["url"])
-            events.append(event)
-    events.sort(key=lambda event: event["publishedAt"], reverse=True)
-    return {
-        "events": events,
-        "providers": statuses,
-        "checkedAt": _utc_iso(datetime.now(timezone.utc)),
-        "freshnessWindowHours": CURRENT_EVENT_FRESHNESS_HOURS,
-        "blocked": False,
-    }
+    def __init__(self) -> None:
+        self._latest: dict[tuple[str, str], _CurrentProviderSnapshot] = {}
+        self._good: dict[tuple[str, str], _CurrentProviderSnapshot] = {}
+        self._inflight: asyncio.Task | None = None
+
+    def _due(self, key: tuple[str, str], now: float) -> bool:
+        snapshot = self._latest.get(key)
+        if snapshot is None:
+            return True
+        ttl = (CURRENT_EVENT_CACHE_SECONDS if snapshot.status["status"] == "OK"
+               else CURRENT_EVENT_ERROR_CACHE_SECONDS)
+        return now >= snapshot.stored_at + ttl
+
+    async def _refresh(self, keys: list[tuple[str, str]]) -> set[tuple[str, str]]:
+        try:
+            async with httpx.AsyncClient(follow_redirects=False) as client:
+                async def fetch(key: tuple[str, str]) -> None:
+                    events, status = await _fetch_current_provider(client, *key)
+                    snapshot = _CurrentProviderSnapshot(
+                        events, status, _utc_iso(datetime.now(timezone.utc)), monotonic(),
+                    )
+                    self._latest[key] = snapshot
+                    if status["status"] == "OK":
+                        # A successful empty feed replaces older headlines too.
+                        self._good[key] = snapshot
+
+                await asyncio.gather(*(fetch(key) for key in keys))
+            return set(keys)
+        finally:
+            self._inflight = None
+
+    async def get(self) -> dict:
+        keys = list(CURRENT_EVENT_PROVIDERS)
+        now = monotonic()
+        for cache in (self._latest, self._good):
+            for key in list(cache):
+                if key not in keys:
+                    del cache[key]
+        for key, snapshot in list(self._good.items()):
+            if now >= snapshot.stored_at + CURRENT_EVENT_STALE_SECONDS:
+                del self._good[key]
+
+        refreshed: set[tuple[str, str]] = set()
+        due = [key for key in keys if self._due(key, now)]
+        if self._inflight is not None or due:
+            # There is no await between checking and installing the task:
+            # concurrent requests in this event loop share the same refresh.
+            if self._inflight is None:
+                self._inflight = asyncio.create_task(self._refresh(due))
+                # Observe exceptions even if every HTTP waiter disconnects.
+                self._inflight.add_done_callback(
+                    lambda task: task.exception() if not task.cancelled() else None
+                )
+            refreshed = await asyncio.shield(self._inflight)
+
+        now = monotonic()
+        served_at = datetime.now(timezone.utc)
+        cutoff = served_at - timedelta(hours=CURRENT_EVENT_FRESHNESS_HOURS)
+        events: list[dict] = []
+        statuses: list[dict] = []
+        for key in keys:
+            latest = self._latest[key]
+            selected = latest
+            stale = False
+            if latest.status["status"] == "ERROR":
+                good = self._good.get(key)
+                if good and now < good.stored_at + CURRENT_EVENT_STALE_SECONDS:
+                    selected, stale = good, True
+            # Recheck every response, including cache hits and stale fallback.
+            current = [
+                event for event in selected.events
+                if (published := _strict_provider_datetime(event.get("publishedAt"))) is not None
+                and cutoff <= published <= served_at
+            ]
+            status = {
+                **latest.status,
+                "cached": key not in refreshed or stale,
+                "stale": stale,
+                "checkedAt": selected.checked_at,
+                "lastAttemptAt": latest.checked_at,
+            }
+            if stale:
+                status["message"] += (
+                    f" Stale cached provider data from {selected.checked_at};"
+                    f" {len(current)} report(s) remain within the freshness window."
+                )
+            elif status["cached"]:
+                status["message"] += f" Cached check from {selected.checked_at}."
+            if len(current) != len(selected.events):
+                status["message"] += " Reports outside the freshness window were excluded."
+            statuses.append(status)
+            events.extend(current)
+
+        events.sort(key=lambda event: event["publishedAt"], reverse=True)
+        unique = {}
+        for event in events:
+            unique.setdefault(event["url"], event)
+        # Do not expose mutable cache records to response consumers.
+        return deepcopy({
+            "events": list(unique.values())[:MAX_CURRENT_EVENTS],
+            "providers": statuses,
+            "checkedAt": max((self._latest[key].checked_at for key in keys),
+                             default=_utc_iso(served_at)),
+            "freshnessWindowHours": CURRENT_EVENT_FRESHNESS_HOURS,
+            "blocked": False,
+        })
+
+
+_current_event_cache = CurrentEventDiscoveryCache()
+
+
+async def discover_current_events() -> dict:
+    """Return shared public discovery; callers must authorize before cache access."""
+    return await _current_event_cache.get()
 
 
 async def _resolve_public_http_url(

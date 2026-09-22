@@ -205,11 +205,13 @@ def list_analysis_starters(owner_id: str) -> dict:
 
 
 async def list_current_events(classification: Classification | str = Classification.UNCLASSIFIED) -> dict:
-    """Return a live discovery feed without reading or mutating sessions.
+    """Return shared public discovery without reading or mutating sessions.
 
     Public RSS collection is permitted only for UNCLASSIFIED discovery.  Keep
     this authorization gate separate from ``list_analysis_starters`` so adding
-    the feed cannot accidentally broaden the owner-scoped starter query.
+    the feed cannot accidentally broaden the owner-scoped starter query. Gate
+    before cache access too: restricted requests must neither receive a warm
+    public snapshot nor join/start an in-flight public collection.
     """
     value = classification.value if isinstance(classification, Classification) else classification
     if value != Classification.UNCLASSIFIED.value:

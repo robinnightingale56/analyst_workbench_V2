@@ -504,6 +504,14 @@ export interface DiscoveryProviderStatus {
   provider: string;
   status: DiscoveryProviderStatusStatus;
   message: string;
+  /** Whether the provider payload was reused from a cached snapshot. */
+  cached?: boolean;
+  /** Whether an expired cached snapshot was used after a provider failure. */
+  stale?: boolean;
+  /** Original provider check time for the returned data; when no data is available, the time of the last attempt. */
+  checkedAt?: string | null;
+  /** Time of the latest attempt to contact the provider. */
+  lastAttemptAt?: string | null;
 }
 
 export interface CurrentEventFeed {

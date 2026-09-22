@@ -608,6 +608,24 @@ components:
           enum: [OK, ERROR, BLOCKED]
         message:
           type: string
+        cached:
+          type: boolean
+          default: false
+          description: Whether the provider payload was reused from a cached snapshot.
+        stale:
+          type: boolean
+          default: false
+          description: Whether an expired cached snapshot was used after a provider failure.
+        checkedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Original provider check time for the returned data; when no data is available, the time of the last attempt.
+        lastAttemptAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Time of the latest attempt to contact the provider.
     RecentQuestionStarter:
       type: object
       required: [sessionId, prompt, classification, updatedAt]
