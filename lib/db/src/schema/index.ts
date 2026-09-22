@@ -18,3 +18,4 @@
 //   export type Post = typeof postsTable.$inferSelect;
 
 export * from "./analysis-sessions";
+export * from "./public-feed-coordination";

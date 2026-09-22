@@ -91,6 +91,8 @@ async def test_provider_transport_reports_partial_errors_and_malformed_feeds():
 
 @pytest.mark.asyncio
 async def test_discovery_returns_explicit_statuses_when_all_providers_fail(monkeypatch):
+    # Synthetic provider keys must never enter the shared public-feed table.
+    monkeypatch.setattr(sources, "_current_event_cache", sources.CurrentEventDiscoveryCache())
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(503, request=request)
 

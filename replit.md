@@ -10,6 +10,8 @@ A secure research and assessment workspace that turns analyst questions into sou
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - Required env: `DATABASE_URL` — Postgres connection string
+- Multiple API workers/replicas must use the same PostgreSQL database for public-feed refresh coordination. Separate SQLite files do not coordinate replicas; SQLite is for local development/tests only.
+- Public-feed coordination schema is Drizzle-owned. Apply it to development with the schema push above and publish the database change before running updated production workers; startup does not create this PostgreSQL table.
 - Optional env: `ARCHIVED_SESSION_RETENTION_DAYS` — positive number of days to retain non-finalized archived sessions (default: `30`)
 - Optional env: `ARCHIVED_SESSION_CLEANUP_INTERVAL_MINUTES` — positive number of minutes between cleanup runs (default: `360`, maximum: `35791.39411666667`)
 

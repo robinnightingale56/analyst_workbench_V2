@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
+    Float,
     Integer,
     JSON,
     String,
@@ -68,6 +69,23 @@ class Base(DeclarativeBase):
     pass
 
 
+class PublicFeedRow(Base):
+    """Only the two versioned, public discovery feeds belong in this table."""
+    __tablename__ = "public_feed_coordination"
+    __table_args__ = (
+        CheckConstraint("provider_key IN ('google-world-v1', 'bbc-world-v1')",
+                        name="public_feed_fixed_keys"),
+        CheckConstraint("length(latest) <= 524288 AND length(good) <= 524288",
+                        name="public_feed_snapshot_size"),
+    )
+    provider_key: Mapped[str] = mapped_column(Text, primary_key=True)
+    latest: Mapped[str | None] = mapped_column(Text, nullable=True)
+    good: Mapped[str | None] = mapped_column(Text, nullable=True)
+    retry_at: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    lease_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    lease_until: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+
+
 class AnalysisSessionRow(Base):
     __tablename__ = "analysis_sessions"
     __table_args__ = (
@@ -106,7 +124,12 @@ def init_db() -> None:
     with _initialization_lock:
         if _initialized:
             return
-        Base.metadata.create_all(engine)
+        # Retain the legacy session initialization, but new PostgreSQL tables
+        # are owned by Drizzle / publish, not startup-time DDL.
+        tables = [AnalysisSessionRow.__table__]
+        if engine.dialect.name == "sqlite":
+            tables.append(PublicFeedRow.__table__)
+        Base.metadata.create_all(engine, tables=tables)
         _migrate_ownership_column()
         _initialized = True
 

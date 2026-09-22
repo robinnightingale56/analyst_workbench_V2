@@ -5,14 +5,16 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from threading import Barrier
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import delete, inspect, select, text, update
+from sqlalchemy import create_engine, delete, inspect, select, text, update
 from sqlalchemy.exc import IntegrityError
 
 
@@ -59,6 +61,10 @@ def contract_run():
             cursor.execute(sql.SQL(
                 "CREATE TABLE {}.analysis_sessions "
                 "(LIKE public.analysis_sessions INCLUDING ALL)"
+            ).format(sql.Identifier(schema_name)))
+            cursor.execute(sql.SQL(
+                "CREATE TABLE {}.public_feed_coordination "
+                "(LIKE public.public_feed_coordination INCLUDING ALL)"
             ).format(sql.Identifier(schema_name)))
 
     parsed = urlsplit(original_url)
@@ -176,6 +182,155 @@ def test_cloned_drizzle_schema_matches_jsonb_timestamp_constraint_and_indexes(
     assert "provenance = 'CONTRACT_TEST'" in stale
     assert "created_at" in stale and "run_id" in stale
     assert "owner_id" in indexes["analysis_sessions_owner_archive_idx"]
+
+
+def test_postgres_public_feed_coordination_claims_publishes_and_fences(
+    contract_run,
+):
+    from api_server.db import PublicFeedRow, SessionLocal, engine
+    from api_server.feed_coordination import PUBLIC_FEED_KEYS, PublicFeedCoordinator
+
+    inspector = inspect(engine)
+    columns = {
+        column["name"]: column
+        for column in inspector.get_columns("public_feed_coordination")
+    }
+    assert set(columns) == {
+        "provider_key",
+        "latest",
+        "good",
+        "retry_at",
+        "lease_token",
+        "lease_until",
+    }
+    assert str(columns["retry_at"]["type"]).upper() == "DOUBLE PRECISION"
+    assert str(columns["lease_until"]["type"]).upper() == "DOUBLE PRECISION"
+    assert not columns["retry_at"]["nullable"]
+    assert not columns["lease_until"]["nullable"]
+    assert inspector.get_pk_constraint("public_feed_coordination")[
+        "constrained_columns"
+    ] == ["provider_key"]
+
+    with SessionLocal() as db:
+        constraints = dict(db.execute(text("""
+            SELECT c.conname, pg_get_constraintdef(c.oid)
+            FROM pg_constraint c
+            JOIN pg_class t ON t.oid = c.conrelid
+            JOIN pg_namespace n ON n.oid = t.relnamespace
+            WHERE n.nspname = current_schema()
+              AND t.relname = 'public_feed_coordination'
+        """)).all())
+    fixed_keys = constraints["public_feed_fixed_keys"]
+    assert "google-world-v1" in fixed_keys
+    assert "bbc-world-v1" in fixed_keys
+    snapshot_size = constraints["public_feed_snapshot_size"]
+    assert "length(latest) <= 524288" in snapshot_size
+    assert "length(good) <= 524288" in snapshot_size
+
+    with pytest.raises(IntegrityError):
+        with SessionLocal.begin() as db:
+            db.add(PublicFeedRow(provider_key="attacker-controlled"))
+    with pytest.raises(IntegrityError):
+        with SessionLocal.begin() as db:
+            db.execute(delete(PublicFeedRow).where(
+                PublicFeedRow.provider_key == PUBLIC_FEED_KEYS[1],
+            ))
+            db.add(PublicFeedRow(
+                provider_key=PUBLIC_FEED_KEYS[1],
+                latest="x" * 524289,
+                good="x" * 524289,
+            ))
+
+    databases = [
+        create_engine(engine.url, pool_pre_ping=True),
+        create_engine(engine.url, pool_pre_ping=True),
+    ]
+    coordinators = [
+        PublicFeedCoordinator(database, lease_seconds=30)
+        for database in databases
+    ]
+    try:
+        for key in PUBLIC_FEED_KEYS:
+            barrier = Barrier(2)
+
+            def claim(index):
+                barrier.wait(timeout=10)
+                return coordinators[index].claim_or_read(key)
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                futures = [executor.submit(claim, index) for index in range(2)]
+                claims = [future.result(timeout=15) for future in futures]
+
+            winners = [
+                index for index, (token, _, _, _) in enumerate(claims) if token
+            ]
+            assert len(winners) == 1
+            winner = winners[0]
+            loser = 1 - winner
+            token, latest, good, claimed_at = claims[winner]
+            assert latest is None and good is None
+            assert claims[loser][0] is None
+
+            with databases[loser].connect() as connection:
+                row = connection.execute(
+                    select(PublicFeedRow).where(
+                        PublicFeedRow.provider_key == key,
+                    )
+                ).mappings().one()
+                database_now = float(connection.execute(text(
+                    "SELECT EXTRACT(EPOCH FROM clock_timestamp())"
+                )).scalar_one())
+            assert row["lease_token"] == token
+            assert row["lease_until"] == pytest.approx(claimed_at + 30)
+            assert claimed_at <= database_now < row["lease_until"]
+
+            snapshot = {
+                "events": [],
+                "status": {
+                    "provider": key,
+                    "status": "OK",
+                    "message": "PostgreSQL contract fixture",
+                },
+                "checked_at": "2026-09-15T12:34:56Z",
+            }
+            assert coordinators[winner].publish(key, token, snapshot, 60)
+            read_token, latest, good, read_at = coordinators[loser].claim_or_read(key)
+            assert read_token is None
+            assert latest == good
+            assert latest["status"] == snapshot["status"]
+            assert claimed_at <= latest["stored_at"] <= read_at
+
+        key = PUBLIC_FEED_KEYS[0]
+        with databases[0].begin() as connection:
+            connection.execute(update(PublicFeedRow).where(
+                PublicFeedRow.provider_key == key,
+            ).values(retry_at=0, lease_token=None, lease_until=0))
+        old_token, _, _, old_now = coordinators[0].claim_or_read(key)
+        assert old_token
+        with databases[1].begin() as connection:
+            connection.execute(text("""
+                UPDATE public_feed_coordination
+                SET lease_until = EXTRACT(EPOCH FROM clock_timestamp()) - 1
+                WHERE provider_key = :key
+            """), {"key": key})
+        new_token, _, _, new_now = coordinators[1].claim_or_read(key)
+        assert new_token and new_token != old_token
+        assert new_now >= old_now
+
+        fenced_snapshot = {
+            "events": [],
+            "status": {
+                "provider": key,
+                "status": "OK",
+                "message": "Lease replacement won",
+            },
+            "checked_at": "2026-09-15T12:35:56Z",
+        }
+        assert not coordinators[0].publish(key, old_token, fenced_snapshot, 60)
+        assert coordinators[1].publish(key, new_token, fenced_snapshot, 60)
+    finally:
+        for database in databases:
+            database.dispose()
 
 
 def test_typescript_row_is_read_and_compare_and_swap_updated_by_python(contract_run):

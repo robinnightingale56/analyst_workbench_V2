@@ -6,3 +6,4 @@
 - [Managed Clerk proxy review](managed-clerk-proxy.md) — an empty development proxy URL is intentional, not evidence of a missing production proxy.
 - [Resume-flow verification](resume-flow-verification.md) — test session restoration through the Sessions page, not only starter callbacks or helper tests.
 - [Classification hydration](classification-hydration.md) — public collection must wait for saved-session classification, not the new-form default.
+- [Public feed coordination](public-feed-coordination.md) — keep shared discovery fail-closed during database outages; never bypass leases with local provider retries.

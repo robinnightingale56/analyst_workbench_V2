@@ -15,6 +15,7 @@ import httpx
 import trafilatura
 from bs4 import BeautifulSoup
 from .models import SourceFile
+from .feed_coordination import PublicFeedCoordinator, PUBLIC_FEED_KEYS
 
 MAX_DOCUMENT_BYTES = 2_000_000
 MAX_DOCUMENT_CHARS = 500_000
@@ -49,6 +50,7 @@ CURRENT_EVENT_PROVIDERS = (
         "https://feeds.bbci.co.uk/news/world/rss.xml",
     ),
 )
+_PUBLIC_FEED_IDS = dict(zip(CURRENT_EVENT_PROVIDERS, PUBLIC_FEED_KEYS))
 
 SOURCE_CONNECTORS = [
     {"id": "google-news-rss", "name": "Google News", "description": "Live news and article discovery through the public Google News RSS feed.", "status": "READY", "mode": "LIVE", "sourceTypes": ["NEWS", "WEB"]},
@@ -385,15 +387,17 @@ class _CurrentProviderSnapshot:
 
 
 class CurrentEventDiscoveryCache:
-    """One bounded public feed cache per API process/event loop.
+    """Bounded public feed snapshots and local single-flight response assembly.
 
     Only fixed provider keys are retained, with at most two bounded snapshots
     per provider (latest attempt and last success). No user/session data enters
     this cache. Monotonic time controls retry deadlines; UTC controls evidence
-    freshness. This is not a cross-worker/distributed cache.
+    freshness. The production singleton uses SQL leases across workers/replicas.
+    A missing coordinator is reserved for isolated parser/cache unit tests.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, coordinator: PublicFeedCoordinator | None = None) -> None:
+        self._coordinator = coordinator
         self._latest: dict[tuple[str, str], _CurrentProviderSnapshot] = {}
         self._good: dict[tuple[str, str], _CurrentProviderSnapshot] = {}
         self._inflight: asyncio.Task | None = None
@@ -408,6 +412,9 @@ class CurrentEventDiscoveryCache:
 
     async def _refresh(self, keys: list[tuple[str, str]]) -> set[tuple[str, str]]:
         try:
+            if self._coordinator is not None:
+                results = await asyncio.gather(*(self._shared_provider(key) for key in keys))
+                return {key for key, refreshed in zip(keys, results) if refreshed}
             async with httpx.AsyncClient(follow_redirects=False) as client:
                 async def fetch(key: tuple[str, str]) -> None:
                     events, status = await _fetch_current_provider(client, *key)
@@ -424,6 +431,45 @@ class CurrentEventDiscoveryCache:
         finally:
             self._inflight = None
 
+    async def _shared_provider(self, key: tuple[str, str]) -> bool:
+        coordinator = self._coordinator
+        feed_id = _PUBLIC_FEED_IDS[key]  # Reject all non-fixed provider keys.
+        refreshed = False
+        # Bound waiting even if successive lease holders crash. A failed
+        # coordination service must not cause an uncoordinated network request.
+        deadline = monotonic() + coordinator.lease_seconds * 2 + 2
+        while monotonic() < deadline:
+            token, latest, good, database_now = await asyncio.to_thread(
+                coordinator.claim_or_read, feed_id,
+            )
+            if token:
+                async with httpx.AsyncClient(follow_redirects=False) as client:
+                    events, status = await _fetch_current_provider(client, *key)
+                snapshot = dict(events=events, status=status,
+                                checked_at=_utc_iso(datetime.now(timezone.utc)))
+                ttl = (CURRENT_EVENT_CACHE_SECONDS if status["status"] == "OK"
+                       else CURRENT_EVENT_ERROR_CACHE_SECONDS)
+                refreshed = await asyncio.to_thread(
+                    coordinator.publish, feed_id, token, snapshot, ttl,
+                )
+                # Read authoritative data even after losing the lease.
+                continue
+            if latest is not None:
+                now = monotonic()
+                def restore(data):
+                    return _CurrentProviderSnapshot(
+                        data["events"], data["status"], data["checked_at"],
+                        now - max(0, database_now - data["stored_at"]),
+                    )
+                self._latest[key] = restore(latest)
+                if good and database_now - good["stored_at"] < CURRENT_EVENT_STALE_SECONDS:
+                    self._good[key] = restore(good)
+                else:
+                    self._good.pop(key, None)
+                return refreshed
+            await asyncio.sleep(0.05)
+        raise TimeoutError("Public feed refresh coordination timed out")
+
     async def get(self) -> dict:
         keys = list(CURRENT_EVENT_PROVIDERS)
         now = monotonic()
@@ -436,7 +482,8 @@ class CurrentEventDiscoveryCache:
                 del self._good[key]
 
         refreshed: set[tuple[str, str]] = set()
-        due = [key for key in keys if self._due(key, now)]
+        due = (keys if self._coordinator is not None
+               else [key for key in keys if self._due(key, now)])
         if self._inflight is not None or due:
             # There is no await between checking and installing the task:
             # concurrent requests in this event loop share the same refresh.
@@ -501,7 +548,7 @@ class CurrentEventDiscoveryCache:
         })
 
 
-_current_event_cache = CurrentEventDiscoveryCache()
+_current_event_cache = CurrentEventDiscoveryCache(PublicFeedCoordinator())
 
 
 async def discover_current_events() -> dict:
