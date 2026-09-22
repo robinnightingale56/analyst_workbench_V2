@@ -79,7 +79,12 @@ async def test_provider_transport_reports_partial_errors_and_malformed_feeds():
     assert bad_status == {
         "provider": "Bad Provider",
         "status": "ERROR",
-        "message": "Provider returned an unsuccessful response.",
+        "message": (
+            "Provider is temporarily unavailable (HTTP 503)."
+            " Retry-After missing; using default cooldown."
+            " Retry cooldown: 30 seconds from this check."
+        ),
+        "_retry_after_seconds": sources.CURRENT_EVENT_ERROR_CACHE_SECONDS,
     }
     assert malformed_events == []
     assert malformed_status == {

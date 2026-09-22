@@ -28,6 +28,7 @@ MAX_CURRENT_EVENTS_PER_PROVIDER = 12
 MAX_CURRENT_EVENTS = 20
 CURRENT_EVENT_CACHE_SECONDS = 60
 CURRENT_EVENT_ERROR_CACHE_SECONDS = 30
+CURRENT_EVENT_MAX_RETRY_AFTER_SECONDS = 3600
 CURRENT_EVENT_STALE_SECONDS = 300
 READABLE_CONTENT_TYPES = {
     "text/html",
@@ -262,6 +263,43 @@ def parse_current_events_rss(
     return events
 
 
+def _current_retry_after(raw: str | None) -> tuple[float, str]:
+    """Bound untrusted Retry-After without retaining provider header text."""
+    fallback = CURRENT_EVENT_ERROR_CACHE_SECONDS
+    if raw is None:
+        return fallback, "Retry-After missing; using default cooldown."
+    value = raw.strip()
+    try:
+        if re.fullmatch(r"[0-9]+", value):
+            # Avoid conversion limits/overflow for arbitrarily large integers.
+            digits = value.lstrip("0") or "0"
+            seconds = (CURRENT_EVENT_MAX_RETRY_AFTER_SECONDS + 1
+                       if len(digits) > 6 else int(digits))
+        else:
+            if len(value) > 128:
+                raise ValueError("oversized date")
+            date = parsedate_to_datetime(value)
+            if date.tzinfo is None:
+                raise ValueError("timezone required")
+            seconds = (date - datetime.now(timezone.utc)).total_seconds()
+        if seconds < 0:
+            raise ValueError("past date")
+    except (ValueError, TypeError, OverflowError):
+        return fallback, "Retry-After invalid or expired; using default cooldown."
+    bounded = max(fallback, min(seconds, CURRENT_EVENT_MAX_RETRY_AFTER_SECONDS))
+    if seconds > CURRENT_EVENT_MAX_RETRY_AFTER_SECONDS:
+        return bounded, "Retry-After capped at the one-hour safety limit."
+    if seconds < fallback:
+        return bounded, "Retry-After subject to the minimum cooldown."
+    return bounded, "Retry-After honored."
+
+
+def _current_provider_ttl(status: dict) -> float:
+    if status["status"] == "OK":
+        return CURRENT_EVENT_CACHE_SECONDS
+    return status.get("_retry_after_seconds", CURRENT_EVENT_ERROR_CACHE_SECONDS)
+
+
 async def _fetch_current_provider(
     client: httpx.AsyncClient,
     provider: str,
@@ -324,7 +362,20 @@ async def _fetch_current_provider(
             "status": "ERROR",
             "message": "Provider request timed out.",
         }
-    except httpx.HTTPStatusError:
+    except httpx.HTTPStatusError as exc:
+        code = exc.response.status_code
+        if code in (429, 503):
+            delay, explanation = _current_retry_after(exc.response.headers.get("Retry-After"))
+            reason = "rate limited requests" if code == 429 else "is temporarily unavailable"
+            return [], {
+                "provider": provider,
+                "status": "ERROR",
+                "message": (
+                    f"Provider {reason} (HTTP {code}). {explanation}"
+                    f" Retry cooldown: {delay:g} seconds from this check."
+                ),
+                "_retry_after_seconds": delay,
+            }
         return [], {
             "provider": provider,
             "status": "ERROR",
@@ -406,8 +457,7 @@ class CurrentEventDiscoveryCache:
         snapshot = self._latest.get(key)
         if snapshot is None:
             return True
-        ttl = (CURRENT_EVENT_CACHE_SECONDS if snapshot.status["status"] == "OK"
-               else CURRENT_EVENT_ERROR_CACHE_SECONDS)
+        ttl = _current_provider_ttl(snapshot.status)
         return now >= snapshot.stored_at + ttl
 
     async def _refresh(self, keys: list[tuple[str, str]]) -> set[tuple[str, str]]:
@@ -447,8 +497,7 @@ class CurrentEventDiscoveryCache:
                     events, status = await _fetch_current_provider(client, *key)
                 snapshot = dict(events=events, status=status,
                                 checked_at=_utc_iso(datetime.now(timezone.utc)))
-                ttl = (CURRENT_EVENT_CACHE_SECONDS if status["status"] == "OK"
-                       else CURRENT_EVENT_ERROR_CACHE_SECONDS)
+                ttl = _current_provider_ttl(status)
                 refreshed = await asyncio.to_thread(
                     coordinator.publish, feed_id, token, snapshot, ttl,
                 )
@@ -515,7 +564,8 @@ class CurrentEventDiscoveryCache:
                 and cutoff <= published <= served_at
             ]
             status = {
-                **latest.status,
+                **{name: value for name, value in latest.status.items()
+                   if not name.startswith("_")},
                 "cached": key not in refreshed or stale,
                 "stale": stale,
                 "checkedAt": selected.checked_at,
