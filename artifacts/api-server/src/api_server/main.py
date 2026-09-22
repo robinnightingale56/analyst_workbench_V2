@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio
 import logging
+import json
 from contextlib import asynccontextmanager
 import os
 from urllib.parse import urlparse
@@ -11,6 +12,8 @@ from fastapi.responses import JSONResponse, Response
 import httpx
 from .auth import auth_mode, auth_readiness, require_trusted_origin, require_user, trusted_origins
 from .config import get_settings
+from .deployment import deployment_readiness
+from .readiness import database_readiness
 from .engine import EVALUATION_VECTORS, HISTORICAL_RATINGS, deduplicate_incidents, incident_citation_error
 from .models import (
     AnalysisStarters, ArchiveUpdate, AssessmentInput, Classification, CreateSession,
@@ -66,6 +69,43 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Api", version="0.1.0", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def deployment_and_audit(request: Request, call_next):
+    # Health/mode information remains observable even for a mistyped profile.
+    deployment = deployment_readiness()
+    if not deployment["ready"] and request.url.path not in {
+        "/api/healthz", "/api/readyz", "/api/auth-mode",
+    }:
+        return _error(deployment["reason"], 503)
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    finally:
+        if getattr(request.state, "audit_authenticated", False):
+            route = request.scope.get("route")
+            # Route templates only: no user-controlled path IDs or query data.
+            logger.info(json.dumps({
+                "event": "authenticated_api_access",
+                "method": request.method,
+                "route": getattr(route, "path", "unmatched"),
+                "status": status_code,
+            }, sort_keys=True))
+
+
+@app.get("/api/readyz")
+def readyz():
+    checks = {
+        "deployment": deployment_readiness(),
+        "authentication": auth_readiness(),
+        "database": database_readiness(),
+    }
+    ready = all(check["ready"] for check in checks.values())
+    return JSONResponse(status_code=200 if ready else 503,
+                        content={"status": "ready" if ready else "not_ready", "checks": checks})
 
 # The browser application and API are same-origin. If another trusted origin is
 # intentionally configured, echo only that explicit allowlist and allow Clerk's
@@ -127,6 +167,9 @@ def _public_host(request: Request) -> str:
 @app.api_route(f"{CLERK_PROXY_PATH}/{{proxy_path:path}}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"])
 async def clerk_frontend_api_proxy(request: Request, proxy_path: str = ""):
     """Production Clerk Frontend API proxy equivalent to the canonical template."""
+    deployment = deployment_readiness()
+    if not deployment["ready"] or deployment["profile"] != "development":
+        return _error("Clerk proxy disabled by deployment profile", 503)
     mode = auth_mode()
     if mode is None:
         return _error("AUTH_MODE_INVALID", 503)

@@ -12,6 +12,7 @@ from time import monotonic
 from urllib.parse import urlencode, urljoin, urlparse
 from uuid import NAMESPACE_URL, uuid4, uuid5
 import httpx
+from .deployment import require_collection_allowed
 import trafilatura
 from bs4 import BeautifulSoup
 from .models import SourceFile
@@ -306,6 +307,7 @@ async def _fetch_current_provider(
     url: str,
 ) -> tuple[list[dict], dict]:
     """Fetch one bounded RSS response and return a safe provider status."""
+    require_collection_allowed()
     try:
         # ``client.get`` buffers the whole response before returning.  Stream
         # the body instead so the byte cap applies while the provider is being
@@ -315,6 +317,7 @@ async def _fetch_current_provider(
             async with client.stream(
                 "GET",
                 url,
+                follow_redirects=False,
                 timeout=CURRENT_EVENT_TIMEOUT_SECONDS,
                 headers={
                     "User-Agent": "AnalystWorkbenchCurrentEventDiscovery/1.0",
@@ -520,6 +523,7 @@ class CurrentEventDiscoveryCache:
         raise TimeoutError("Public feed refresh coordination timed out")
 
     async def get(self) -> dict:
+        require_collection_allowed()
         keys = list(CURRENT_EVENT_PROVIDERS)
         now = monotonic()
         for cache in (self._latest, self._good):
@@ -609,6 +613,7 @@ async def discover_current_events() -> dict:
 async def _resolve_public_http_url(
     url: str,
 ) -> tuple[object, list[ipaddress.IPv4Address | ipaddress.IPv6Address]]:
+    require_collection_allowed()
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ValueError("document URL must use public HTTP or HTTPS")
@@ -632,7 +637,11 @@ async def _resolve_public_http_url(
             for item in resolved
         })
 
-    if not addresses or any(not address.is_global for address in addresses):
+    if not addresses or any(
+        not address.is_global or address.is_multicast or address.is_reserved
+        or (isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None)
+        for address in addresses
+    ):
         raise ValueError("document URL resolved to a non-public address")
     return parsed, sorted(addresses, key=lambda address: (address.version != 4, str(address)))
 
@@ -642,6 +651,7 @@ async def extract_readable_document(
     url: str,
 ) -> str:
     """Fetch and extract bounded readable text from a public web document."""
+    require_collection_allowed()
     current_url = url
     async with asyncio.timeout(DOCUMENT_TIMEOUT_SECONDS):
         for redirect_count in range(MAX_DOCUMENT_REDIRECTS + 1):
@@ -654,6 +664,7 @@ async def extract_readable_document(
                 hop_client: httpx.AsyncClient,
                 pinned_url: str,
             ) -> tuple[str | None, str | None]:
+                require_collection_allowed()
                 async with hop_client.stream(
                     "GET",
                     pinned_url,
@@ -702,7 +713,7 @@ async def extract_readable_document(
                     if client is None:
                         # A fresh pool per address prevents redirects or DNS
                         # aliases from reusing another logical host's TLS session.
-                        async with httpx.AsyncClient() as hop_client:
+                        async with httpx.AsyncClient(trust_env=False) as hop_client:
                             location, raw = await read_hop(hop_client, pinned_url)
                     else:
                         # Tests may supply a MockTransport-backed client.
@@ -803,7 +814,8 @@ def parse_bing_news_rss(xml: str, prompt: str, limit: int, retrieved_at: str | N
 
 
 async def _get(client: httpx.AsyncClient, url: str, *, json_response: bool = False) -> object:
-    response = await client.get(url, timeout=12, headers={"User-Agent": "AnalystWorkbenchProofOfConcept/0.1"})
+    require_collection_allowed()
+    response = await client.get(url, follow_redirects=False, timeout=12, headers={"User-Agent": "AnalystWorkbenchProofOfConcept/0.1"})
     response.raise_for_status()
     if len(response.content) > 5_000_000:
         raise ValueError("provider response exceeded the 5 MB limit")
@@ -811,6 +823,7 @@ async def _get(client: httpx.AsyncClient, url: str, *, json_response: bool = Fal
 
 
 def demonstration_files(prompt: str, max_results: int = 4) -> list[dict]:
+    require_collection_allowed()
     now = datetime.now(timezone.utc)
     templates = [
         ("Training record: official update identifies a change", "GOVERNMENT", "HIGH", "Synthetic training reporting indicates a measurable change, but does not establish intent or long-term trajectory.", "On 12 September 2026, Country Alpha and Country Beta exchanged fire near the North Ridge border crossing. Officials described the encounter as brief and reported no territorial change."),
@@ -827,6 +840,7 @@ def demonstration_files(prompt: str, max_results: int = 4) -> list[dict]:
 
 
 async def research(prompt: str, connector_ids: list[str], max_results: int = 12) -> tuple[list[dict], list[str]]:
+    require_collection_allowed()
     unknown = [x for x in connector_ids if not is_known_connector(x)]
     if unknown:
         raise ValueError(f"Unknown source connector: {', '.join(unknown)}")

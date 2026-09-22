@@ -1,6 +1,7 @@
 import os
 from datetime import timedelta
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from uuid import uuid4
 import httpx
@@ -9,8 +10,8 @@ from sqlalchemy.exc import IntegrityError
 
 # Keep contract tests self-contained; production uses DATABASE_URL and the
 # PostgreSQL-compatible table below unchanged.
-_db_file = Path("/tmp/api-server-contracts.sqlite")
-_db_file.unlink(missing_ok=True)
+_test_directory = TemporaryDirectory(prefix="api-server-contracts-")
+_db_file = Path(_test_directory.name) / "contracts.sqlite"
 os.environ.pop("DATABASE_URL", None)
 os.environ["API_DATABASE_URL"] = f"sqlite:///{_db_file}"
 os.environ["ALLOWED_ORIGINS"] = "http://testserver"

@@ -1,0 +1,23 @@
+[Unit]
+Description=Analyst Workbench API (reviewed restricted baseline)
+After=network.target
+
+[Service]
+Type=simple
+User=analyst
+Group=analyst
+WorkingDirectory=/opt/analyst/current/artifacts/api-server
+EnvironmentFile=/etc/analyst/runtime.env
+ExecStart=/opt/analyst/current/.venv/bin/uvicorn api_server.main:app --app-dir src --host 127.0.0.1 --port 8080
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/analyst
+Environment=PYTHONDONTWRITEBYTECODE=1
+
+[Install]
+WantedBy=multi-user.target

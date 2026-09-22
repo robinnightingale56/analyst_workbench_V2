@@ -26,6 +26,8 @@ export const AuthReadinessReason = {
   CLERK_NOT_CONFIGURED: 'CLERK_NOT_CONFIGURED',
   PKI_NOT_CONFIGURED: 'PKI_NOT_CONFIGURED',
   AUTH_MODE_INVALID: 'AUTH_MODE_INVALID',
+  RESTRICTED_REQUIRES_PKI: 'RESTRICTED_REQUIRES_PKI',
+  DEPLOYMENT_PROFILE_INVALID: 'DEPLOYMENT_PROFILE_INVALID',
 } as const;
 
 export interface AuthReadiness {
@@ -38,6 +40,60 @@ export interface HealthStatus {
   status: string;
   archivePolicy: HealthStatusArchivePolicy;
   authentication: AuthReadiness;
+}
+
+export type DeploymentReadinessProfile = typeof DeploymentReadinessProfile[keyof typeof DeploymentReadinessProfile];
+
+
+export const DeploymentReadinessProfile = {
+  development: 'development',
+  restricted: 'restricted',
+  invalid: 'invalid',
+} as const;
+
+export type DeploymentReadinessReason = typeof DeploymentReadinessReason[keyof typeof DeploymentReadinessReason];
+
+
+export const DeploymentReadinessReason = {
+  RESTRICTED_REQUIRES_PKI: 'RESTRICTED_REQUIRES_PKI',
+  DEPLOYMENT_PROFILE_INVALID: 'DEPLOYMENT_PROFILE_INVALID',
+} as const;
+
+export interface DeploymentReadiness {
+  profile: DeploymentReadinessProfile;
+  ready: boolean;
+  reason?: DeploymentReadinessReason;
+}
+
+export type DatabaseReadinessReason = typeof DatabaseReadinessReason[keyof typeof DatabaseReadinessReason];
+
+
+export const DatabaseReadinessReason = {
+  DATABASE_UNAVAILABLE_OR_SCHEMA_INCOMPLETE: 'DATABASE_UNAVAILABLE_OR_SCHEMA_INCOMPLETE',
+} as const;
+
+export interface DatabaseReadiness {
+  ready: boolean;
+  reason?: DatabaseReadinessReason;
+}
+
+export type ReadinessStatusStatus = typeof ReadinessStatusStatus[keyof typeof ReadinessStatusStatus];
+
+
+export const ReadinessStatusStatus = {
+  ready: 'ready',
+  not_ready: 'not_ready',
+} as const;
+
+export type ReadinessStatusChecks = {
+  deployment: DeploymentReadiness;
+  authentication: AuthReadiness;
+  database: DatabaseReadiness;
+};
+
+export interface ReadinessStatus {
+  status: ReadinessStatusStatus;
+  checks: ReadinessStatusChecks;
 }
 
 export const HealthDegradedValue = {

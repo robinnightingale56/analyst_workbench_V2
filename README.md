@@ -1,5 +1,22 @@
 # Analyst Workbench
 
+## Transfer and target-side integration
+
+Start with [the integration handoff](docs/INTEGRATION-HANDOFF.md) to connect
+existing target-network identity and collection code. The source archive is
+for continued development on that network; it is not a complete offline
+dependency bundle or an authenticated operational deployment.
+
+- [Source packaging and checksum verification](docs/TRANSFER-SOURCE.md)
+- [Installation, dependency staging, and recovery](docs/TRANSFER-INSTALL.md)
+- [Local verification and target activation checklist](docs/HIGHSIDE-ACCEPTANCE.md)
+
+Run `pnpm transfer:check`, then
+`pnpm transfer:package /path/to/analyst-source.tar.gz` after reviewing and
+staging the intended source changes. The restricted profile blocks public
+collection and remains unavailable until the target identity adapter is
+implemented; do not bypass that boundary merely to make readiness pass.
+
 Analyst Workbench is a source-backed research and assessment application. It lets an analyst create a research session, collect material from configured source adapters, select evidence, and review an assessment against ICD-203 analytic tradecraft standards.
 
 This repository is one pnpm monorepo containing the web application, API server, shared API contracts, database schema, and the component-preview tooling used during development.

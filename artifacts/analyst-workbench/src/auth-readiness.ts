@@ -1,8 +1,6 @@
-export type AuthReadiness = {
-  mode: 'clerk' | 'pki' | 'invalid';
-  ready: boolean;
-  reason?: 'CLERK_NOT_CONFIGURED' | 'PKI_NOT_CONFIGURED' | 'AUTH_MODE_INVALID';
-};
+import type { AuthReadiness } from '@workspace/api-client-react';
+
+export type { AuthReadiness } from '@workspace/api-client-react';
 
 function isAuthReadiness(value: unknown): value is AuthReadiness {
   if (!value || typeof value !== 'object') return false;
@@ -15,6 +13,8 @@ function isAuthReadiness(value: unknown): value is AuthReadiness {
       || candidate.reason === 'CLERK_NOT_CONFIGURED'
       || candidate.reason === 'PKI_NOT_CONFIGURED'
       || candidate.reason === 'AUTH_MODE_INVALID'
+      || candidate.reason === 'RESTRICTED_REQUIRES_PKI'
+      || candidate.reason === 'DEPLOYMENT_PROFILE_INVALID'
     )
   );
 }

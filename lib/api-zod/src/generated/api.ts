@@ -21,7 +21,32 @@ export const HealthCheckResponse = zod.object({
   "authentication": zod.object({
   "mode": zod.enum(['clerk', 'pki', 'invalid']),
   "ready": zod.boolean(),
-  "reason": zod.enum(['CLERK_NOT_CONFIGURED', 'PKI_NOT_CONFIGURED', 'AUTH_MODE_INVALID']).optional()
+  "reason": zod.enum(['CLERK_NOT_CONFIGURED', 'PKI_NOT_CONFIGURED', 'AUTH_MODE_INVALID', 'RESTRICTED_REQUIRES_PKI', 'DEPLOYMENT_PROFILE_INVALID']).optional()
+})
+})
+
+
+/**
+ * Read-only deployment, authentication, and required database table/column checks. Does not create schema. PKI remains unready until an approved adapter is implemented.
+ * @summary Deployment readiness
+ */
+export const ReadinessCheckResponse = zod.object({
+  "status": zod.enum(['ready', 'not_ready']),
+  "checks": zod.object({
+  "deployment": zod.object({
+  "profile": zod.enum(['development', 'restricted', 'invalid']),
+  "ready": zod.boolean(),
+  "reason": zod.enum(['RESTRICTED_REQUIRES_PKI', 'DEPLOYMENT_PROFILE_INVALID']).optional()
+}),
+  "authentication": zod.object({
+  "mode": zod.enum(['clerk', 'pki', 'invalid']),
+  "ready": zod.boolean(),
+  "reason": zod.enum(['CLERK_NOT_CONFIGURED', 'PKI_NOT_CONFIGURED', 'AUTH_MODE_INVALID', 'RESTRICTED_REQUIRES_PKI', 'DEPLOYMENT_PROFILE_INVALID']).optional()
+}),
+  "database": zod.object({
+  "ready": zod.boolean(),
+  "reason": zod.enum(['DATABASE_UNAVAILABLE_OR_SCHEMA_INCOMPLETE']).optional()
+})
 })
 })
 
@@ -33,7 +58,7 @@ export const HealthCheckResponse = zod.object({
 export const GetAuthModeResponse = zod.object({
   "mode": zod.enum(['clerk', 'pki', 'invalid']),
   "ready": zod.boolean(),
-  "reason": zod.enum(['CLERK_NOT_CONFIGURED', 'PKI_NOT_CONFIGURED', 'AUTH_MODE_INVALID']).optional()
+  "reason": zod.enum(['CLERK_NOT_CONFIGURED', 'PKI_NOT_CONFIGURED', 'AUTH_MODE_INVALID', 'RESTRICTED_REQUIRES_PKI', 'DEPLOYMENT_PROFILE_INVALID']).optional()
 })
 
 

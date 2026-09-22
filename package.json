@@ -6,6 +6,8 @@
   "scripts": {
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
+    "transfer:check": "node scripts/transfer/package.mjs check",
+    "transfer:package": "node scripts/transfer/package.mjs create",
     "test:incident-review-evidence-contract": "pnpm run typecheck:libs && pnpm --filter @workspace/scripts exec tsx validation/incident-review-evidence-contract.test.ts",
     "test:canvas-publish-contract": "node scripts/validation/canvas-publish-contract.test.mjs",
     "test:shared-port-utils": "pnpm --filter @workspace/test-utils test",

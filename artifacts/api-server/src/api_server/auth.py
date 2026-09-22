@@ -19,6 +19,7 @@ from urllib.parse import urlparse
 import jwt
 from fastapi import HTTPException, Request, status
 from jwt import PyJWKClient
+from .deployment import deployment_readiness
 
 SESSION_COOKIE = "__session"
 ALGORITHMS = ("RS256", "RS384", "RS512")
@@ -57,6 +58,9 @@ def auth_mode() -> AuthMode | None:
 def auth_readiness() -> dict[str, object]:
     """Public, non-secret auth posture for deployment/readiness reporting."""
     mode = auth_mode()
+    deployment = deployment_readiness()
+    if not deployment["ready"]:
+        return {"mode": mode or "invalid", "ready": False, "reason": deployment["reason"]}
     if mode is None:
         return {
             "mode": "invalid",
@@ -87,6 +91,9 @@ def _not_configured_error(reason: str) -> HTTPException:
 def require_auth_ready() -> AuthMode:
     """Gate protected behavior before any provider-specific authentication."""
     mode = auth_mode()
+    deployment = deployment_readiness()
+    if not deployment["ready"]:
+        raise _not_configured_error(deployment["reason"])
     if mode is None:
         raise _not_configured_error("AUTH_MODE_INVALID")
     if mode == "pki":
@@ -195,6 +202,7 @@ def _jwks_client(issuer: str) -> PyJWKClient:
 
 def verify_clerk_session(token: str) -> str:
     """Return a verified Clerk user ID or raise ClerkAuthenticationError."""
+    require_auth_ready()
     issuer = _issuer()
     audience = os.getenv("CLERK_JWT_AUDIENCE", "").strip() or None
     try:
@@ -232,7 +240,9 @@ def verify_clerk_session(token: str) -> str:
 
 async def require_user(request: Request) -> str:
     """Compatibility dependency returning the existing owner-ID string."""
-    return (await require_principal(request)).subject
+    principal = await require_principal(request)
+    request.state.audit_authenticated = True
+    return principal.subject
 
 
 async def require_principal(request: Request) -> TrustedPrincipal:
