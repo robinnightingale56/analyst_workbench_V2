@@ -7,3 +7,4 @@
 - [Resume-flow verification](resume-flow-verification.md) — test session restoration through the Sessions page, not only starter callbacks or helper tests.
 - [Classification hydration](classification-hydration.md) — public collection must wait for saved-session classification, not the new-form default.
 - [Public feed coordination](public-feed-coordination.md) — keep shared discovery fail-closed during database outages; never bypass leases with local provider retries.
+- [API operational logging](api-operational-logging.md) — Uvicorn does not install an application root sink; verify INFO signals outside pytest capture.

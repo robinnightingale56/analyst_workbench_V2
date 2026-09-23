@@ -17,6 +17,7 @@ import trafilatura
 from bs4 import BeautifulSoup
 from .models import SourceFile
 from .feed_coordination import PublicFeedCoordinator, PUBLIC_FEED_KEYS
+from .feed_signals import signal
 
 MAX_DOCUMENT_BYTES = 2_000_000
 MAX_DOCUMENT_CHARS = 500_000
@@ -485,6 +486,27 @@ class CurrentEventDiscoveryCache:
             self._inflight = None
 
     async def _shared_provider(self, key: tuple[str, str]) -> bool:
+        feed_id = _PUBLIC_FEED_IDS[key]
+        started = monotonic()
+        outcome = "refresh_complete"
+        try:
+            return await self._shared_provider_attempt(key)
+        except asyncio.CancelledError:
+            outcome = "refresh_cancelled"
+            raise
+        except TimeoutError:
+            outcome = "refresh_timeout"
+            raise
+        except Exception:
+            outcome = "refresh_failed"
+            raise
+        finally:
+            duration = monotonic() - started
+            signal(feed_id, outcome, duration=duration)
+            if duration >= self._coordinator.lease_seconds:
+                signal(feed_id, "refresh_slow", duration=duration)
+
+    async def _shared_provider_attempt(self, key: tuple[str, str]) -> bool:
         coordinator = self._coordinator
         feed_id = _PUBLIC_FEED_IDS[key]  # Reject all non-fixed provider keys.
         refreshed = False
@@ -518,6 +540,10 @@ class CurrentEventDiscoveryCache:
                     self._good[key] = restore(good)
                 else:
                     self._good.pop(key, None)
+                success = latest["status"]["status"] == "OK"
+                signal(feed_id, "cache_success" if success else "cache_error")
+                if not success and key in self._good:
+                    signal(feed_id, "stale_fallback")
                 return refreshed
             await asyncio.sleep(0.05)
         raise TimeoutError("Public feed refresh coordination timed out")

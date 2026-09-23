@@ -7,17 +7,33 @@ Database errors propagate (never fall back to uncoordinated provider requests).
 from __future__ import annotations
 
 import json
+from functools import wraps
 from uuid import uuid4
 
 from sqlalchemy import select, update, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from .db import PublicFeedRow, engine
+from .feed_signals import PUBLIC_FEED_KEYS, signal
 
-PUBLIC_FEED_KEYS = ("google-world-v1", "bbc-world-v1")
 MAX_SNAPSHOT_BYTES = 524288
 REFRESH_LEASE_SECONDS = 15
+
+
+def database_signal(operation):
+    def decorate(method):
+        @wraps(method)
+        def wrapped(self, key, *args, **kwargs):
+            self._key(key)
+            try:
+                return method(self, key, *args, **kwargs)
+            except SQLAlchemyError:
+                signal(key, f"{operation}_database_error")
+                raise
+        return wrapped
+    return decorate
 
 
 class PublicFeedCoordinator:
@@ -37,6 +53,7 @@ class PublicFeedCoordinator:
         if key not in PUBLIC_FEED_KEYS:
             raise ValueError("Only fixed public feed keys may be coordinated")
 
+    @database_signal("claim")
     def claim_or_read(self, key):
         """Return (token, latest, good, database_now); a null token means wait/hit."""
         self._key(key)
@@ -48,7 +65,17 @@ class PublicFeedCoordinator:
             ).on_conflict_do_nothing(index_elements=["provider_key"]))
             now = self._now(connection)
             token = str(uuid4())
-            acquired = connection.execute(
+            # The conditional update counts only the actual reclaim winner,
+            # not every waiting replica that observed an abandoned lease.
+            claim = update(table).where(
+                table.c.provider_key == key,
+                table.c.retry_at <= now,
+                table.c.lease_until <= now,
+            ).values(lease_token=token, lease_until=now + self.lease_seconds)
+            expired = connection.execute(claim.where(
+                table.c.lease_token.is_not(None),
+            )).rowcount == 1
+            acquired = expired or connection.execute(
                 update(table).where(
                     table.c.provider_key == key,
                     table.c.retry_at <= now,
@@ -63,8 +90,11 @@ class PublicFeedCoordinator:
             # refreshes. Last-success data is carried separately for fallback.
             if row["retry_at"] <= now:
                 latest = None
-            return token if acquired else None, latest, good, now
+        if expired:
+            signal(key, "lease_expired")
+        return token if acquired else None, latest, good, now
 
+    @database_signal("publish")
     def publish(self, key, token, snapshot, ttl):
         self._key(key)
         if len(snapshot["events"]) > 12:
@@ -80,8 +110,11 @@ class PublicFeedCoordinator:
                           lease_token=None, lease_until=0)
             if snapshot["status"]["status"] == "OK":
                 values["good"] = payload
-            return connection.execute(update(table).where(
+            published = connection.execute(update(table).where(
                 table.c.provider_key == key,
                 table.c.lease_token == token,
                 table.c.lease_until > now,
             ).values(**values)).rowcount == 1
+        outcome = "success" if snapshot["status"]["status"] == "OK" else "error"
+        signal(key, f"publish_{outcome}" if published else "publish_rejected")
+        return published
